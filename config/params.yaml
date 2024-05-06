@@ -1,9 +1,9 @@
 dt: 0.01
 human_control_law: CONST_VEL
 human_kynematic_model: KEYPOINTS
-human_noisy: False
-human_W: np.array([], dtype=float)
 human_n_dof: 3
+human_noisy: False
+human_model_variances: [0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1] # [pos, vel, acc] x human_n_dof
 human_Kp: 1.0
 human_Kd: 1.0
 human_K_repulse: 1.0
