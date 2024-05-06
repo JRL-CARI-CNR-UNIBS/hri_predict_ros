@@ -31,6 +31,11 @@ catkin_package()
 catkin_install_python(PROGRAMS
   src/prediction_node.py
   src/${PROJECT_NAME}/Predictor.py
+  src/hri_predict/HumanModel.py
+  src/hri_predict/RobotModel.py
+  src/hri_predict/HumanRobotSystem.py
+  src/hri_predict/KalmanPredictor.py
+  src/hri_predict/utils.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

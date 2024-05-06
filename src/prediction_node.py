@@ -11,8 +11,11 @@ node_name = "hri_prediction_node"
 dt = 0.01
 human_control_law = None
 human_kynematic_model = None
-human_noisy = None
+human_noisy_model = None
+human_noisy_measure = None
 human_model_variances = None
+human_init_variances = None
+robot_init_variances = None
 human_n_dof = None
 human_Kp = None
 human_Kd = None
@@ -24,6 +27,8 @@ beta = None
 kappa = None
 skeleton_topic = "/zed/zed_node/body_trk/skeletons"
 robot_js_topic = "/robot/joint_states"
+predicted_hri_state_topic = "/predicted_hri_state"
+predicted_hri_cov_topic = "/predicted_hri_cov"
 hz = 100
 num_steps = 10
 
@@ -32,8 +37,11 @@ def read_params():
     global  dt, \
             human_control_law, \
             human_kynematic_model, \
-            human_noisy, \
+            human_noisy_model, \
+            human_noisy_measure, \
             human_model_variances, \
+            human_init_variances, \
+            robot_init_variances, \
             human_n_dof, \
             human_Kp, \
             human_Kd, \
@@ -45,6 +53,8 @@ def read_params():
             kappa, \
             skeleton_topic, \
             robot_js_topic, \
+            predicted_hri_state_topic, \
+            predicted_hri_cov_topic, \
             hz, \
             num_steps
     
@@ -52,8 +62,11 @@ def read_params():
         dt =                                 rospy.get_param(node_name + '/dt')
         human_control_law =                  rospy.get_param(node_name + '/human_control_law')
         human_kynematic_model =              rospy.get_param(node_name + '/human_kynematic_model')
-        human_noisy =                        rospy.get_param(node_name + '/human_noisy')
+        human_noisy_model =                  rospy.get_param(node_name + '/human_noisy_model')
+        human_noisy_measure =                rospy.get_param(node_name + '/human_noisy_measure')
         human_model_variances =     np.array(rospy.get_param(node_name + '/human_model_variances'))
+        human_init_variances =      np.array(rospy.get_param(node_name + '/human_init_variances'))
+        robot_init_variances =      np.array(rospy.get_param(node_name + '/robot_init_variances'))
         human_n_dof =                        rospy.get_param(node_name + '/human_n_dof')
         human_Kp =                           rospy.get_param(node_name + '/human_Kp')
         human_Kd =                           rospy.get_param(node_name + '/human_Kd')
@@ -65,6 +78,8 @@ def read_params():
         kappa =                              rospy.get_param(node_name + '/kappa')
         skeleton_topic =                     rospy.get_param(node_name + '/skeleton_topic', skeleton_topic)
         robot_js_topic =                     rospy.get_param(node_name + '/robot_js_topic', robot_js_topic)
+        predicted_hri_state_topic =          rospy.get_param(node_name + '/predicted_hri_state_topic', predicted_hri_state_topic)
+        predicted_hri_cov_topic =            rospy.get_param(node_name + '/predicted_hri_cov_topic', predicted_hri_cov_topic)
         hz =                                 rospy.get_param(node_name + '/hz', hz)
         num_steps =                          rospy.get_param(node_name + '/num_steps', num_steps)
 
@@ -73,8 +88,11 @@ def read_params():
             dt={dt}, \n\
             human_control_law={human_control_law}, \n\
             human_kynematic_model={human_kynematic_model}, \n\
-            human_noisy={human_noisy}, \n\
+            human_noisy_model={human_noisy_model}, \n\
+            human_noisy_measure={human_noisy_measure}, \n\
             human_model_variances={human_model_variances}, \n\
+            human_init_variances={human_init_variances}, \n\
+            robot_init_variances={robot_init_variances}, \n\
             human_n_dof={human_n_dof}, \n\
             human_Kp={human_Kp}, \n\
             human_Kd={human_Kd}, \n\
@@ -86,6 +104,8 @@ def read_params():
             kappa={kappa}, \n\
             skeleton_topic={skeleton_topic}, \n\
             robot_js_topic={robot_js_topic}, \n\
+            predicted_hri_state_topic={predicted_hri_state_topic}, \n\
+            predicted_hri_cov_topic={predicted_hri_cov_topic}, \n\
             hz={hz}, \n\
             num_steps={num_steps}"
         )
@@ -110,7 +130,8 @@ def main():
         dt=dt,
         human_control_law=human_control_law,
         human_kynematic_model=human_kynematic_model,
-        human_noisy=human_noisy,
+        human_noisy_model=human_noisy_model,
+        human_noisy_measure=human_noisy_measure,
         human_W=human_model_variances,
         human_n_dof=human_n_dof,
         human_Kp=human_Kp,
@@ -122,7 +143,9 @@ def main():
         beta=beta,
         kappa=kappa,
         skeleton_topic=skeleton_topic,
-        robot_js_topic=robot_js_topic
+        robot_js_topic=robot_js_topic,
+        predicted_hri_state_topic=predicted_hri_state_topic,
+        predicted_hri_cov_topic=predicted_hri_cov_topic
     )
 
     rospy.loginfo("CREATED 'PREDICTOR' OBJECT:" + 
@@ -130,23 +153,33 @@ def main():
                   f"\n{predictor}" +
                   "\n======================================================================\n")
 
-    current_hrs_system = predictor.kalman_predictor.model.state()
-    predictor.kalman_predictor.initialize(current_hrs_system)
+    # Initialize the kalman_predictor
+    predictor.kalman_predictor.initialize(x0_human=predictor.human_state,
+                                          x0_robot=predictor.robot_state,
+                                          P0_human=human_init_variances,
+                                          P0_robot=robot_init_variances)
+    
 
-    rate = rospy.Rate(hz)  # 100 Hz
+    # Set the rate of the node
+    rate = rospy.Rate(hz)
+
+    # Main loop
     while not rospy.is_shutdown():
         rospy.spin()
+
         # UPDATE human_robot_system CURRENT state using kalman_predictor
-        predictor.kalman_predictor.update(predictor.skeleton_kpts)
+        current_meas = np.concatenate((predictor.human_state, predictor.robot_state))
+        predictor.kalman_predictor.update(current_meas)
 
         # PREDICT human_robot_system NEXT state using kalman_predictor
         predictor.kalman_predictor.predict()
 
         # k-step ahead prediction of human_robot_system state
-        predictor.kalman_predictor.k_step_predict(num_steps)
+        pred_state, pred_cov = predictor.kalman_predictor.k_step_predict(num_steps)
 
         # Publish the sequence of predicted states along with their covariances
-        # TODO: Implement this
+        predictor.publish_predicted_state(pred_state)
+        predictor.publish_predicted_cov(pred_cov)
 
         rate.sleep()
 
