@@ -1,0 +1,7 @@
+<launch>
+    <!-- Load parameters from a yaml file -->
+    <rosparam file="$(find hri_predict_ros)/config/params.yaml" command="load" ns="hri_prediction_node" />
+
+    <!-- Launch the prediction node -->
+    <node pkg="hri_predict_ros" type="prediction_node.py" name="hri_prediction_node" output="screen" />
+</launch>

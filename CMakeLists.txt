@@ -4,6 +4,8 @@ project(hri_predict_ros)
 ## Find catkin macros and libraries
 find_package(catkin REQUIRED COMPONENTS
   rospy
+  zed_msgs
+  sensor_msgs
 )
 
 # Install modules and global scripts declared therein
@@ -28,15 +30,16 @@ catkin_package()
 ## in contrast to setup.py, you can choose the destination
 catkin_install_python(PROGRAMS
   src/prediction_node.py
+  src/${PROJECT_NAME}/Predictor.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
 ## Mark other files for installation (e.g. launch and bag files, etc.)
-# install(FILES
-#   # myfile1
-#   # myfile2
-#   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
-# )
+install(FILES
+  config/params.yaml
+  launch/predictor_bringup.launch
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
+)
 
 #############
 ## Testing ##
