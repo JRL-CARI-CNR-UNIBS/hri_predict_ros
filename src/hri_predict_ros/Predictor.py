@@ -8,7 +8,9 @@ from hri_predict.KalmanPredictor import KalmanPredictor
 import rospy
 from zed_msgs.msg import ObjectsStamped
 from sensor_msgs.msg import JointState
+from geometry_msgs.msg import Vector3
 from std_msgs.msg import Float64MultiArray
+from hri_predict_ros.msg import KeypointState
 
 
 @dataclass
@@ -87,7 +89,7 @@ class Predictor:
         self.robot_state_sub    = rospy.Subscriber(robot_js_topic, JointState, self.read_robot_js_cb)
         self.pred_state_pub     = rospy.Publisher(node_name + predicted_hri_state_topic, Float64MultiArray, queue_size=10)
         self.covariance_pub     = rospy.Publisher(node_name + predicted_hri_cov_topic, Float64MultiArray, queue_size=10)
-        self.human_state_pub    = rospy.Publisher(node_name + human_state_topic, JointState, queue_size=10)
+        self.human_state_pub    = rospy.Publisher(node_name + human_state_topic, KeypointState, queue_size=10)
 
 
     def read_skeleton_cb(self, msg: ObjectsStamped) -> None:
@@ -102,8 +104,8 @@ class Predictor:
             
             if self.kalman_predictor.model.human_model.kynematic_model == HM.KynematicModel.KEYPOINTS:
                 # Compute velocity for each keypoint
-                pos = np.reshape(self.skeleton_kpts, (1, -1))
-                pos_prev = np.reshape(self.skeleton_kpts_prev, (1, -1))
+                pos = self.skeleton_kpts
+                pos_prev = self.skeleton_kpts_prev
                 vel = (pos - pos_prev) / (self.skeleton_time - self.skeleton_time_prev)
                 
                 # Update current human state
@@ -128,14 +130,27 @@ class Predictor:
         self.skeleton_kpts_prev = self.skeleton_kpts
         self.skeleton_time_prev = self.skeleton_time
         
-        rospy.loginfo(f"Received human state:\n{self.human_state}")
+        # rospy.loginfo(f"Received human state:\n{self.human_state}")
 
         # Publish current human state
-        human_state_msg = JointState()
+        human_state_msg = KeypointState()
         human_state_msg.header.stamp = rospy.Time.now()
-        human_state_msg.position = pos.ravel().tolist()
-        human_state_msg.velocity = vel.ravel().tolist()
-        human_state_msg.effort = np.full(pos.shape, np.nan).ravel().tolist() # otherwise Plotjuggler does not display the message correctly [Bug fixed on 2024-02-04]
+        human_state_msg.position = []
+        human_state_msg.velocity = []
+        for i in range(self.n_kpts): # [pos_x, vel_x, pos_y, vel_y, pos_z, vel_z] for each keypoint
+            rospy.loginfo(f"Publishing keypoint #{i}\t: pos={pos[i]} \t|\t vel={vel[i]}")
+            human_state_msg.name.append(f"kp_{i}")
+            kpt_pos = Vector3()
+            kpt_pos.x = pos[i][0]
+            kpt_pos.y = pos[i][1]
+            kpt_pos.z = pos[i][2]
+            human_state_msg.position.append(kpt_pos)
+            kpt_vel = Vector3()
+            kpt_vel.x = vel[i][0]
+            kpt_vel.y = vel[i][1]
+            kpt_vel.z = vel[i][2]
+            human_state_msg.velocity.append(kpt_vel)
+
         self.human_state_pub.publish(human_state_msg)
 
 
