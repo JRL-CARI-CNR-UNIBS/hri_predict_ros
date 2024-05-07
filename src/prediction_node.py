@@ -17,6 +17,7 @@ human_model_variances = None
 human_init_variances = None
 robot_init_variances = None
 human_n_dof = None
+human_n_kpts = None
 human_Kp = None
 human_Kd = None
 human_K_repulse = None
@@ -29,6 +30,7 @@ skeleton_topic = "/zed/zed_node/body_trk/skeletons"
 robot_js_topic = "/robot/joint_states"
 predicted_hri_state_topic = "/predicted_hri_state"
 predicted_hri_cov_topic = "/predicted_hri_cov"
+human_state_topic = "/human_state"
 hz = 100
 num_steps = 10
 
@@ -43,6 +45,7 @@ def read_params():
             human_init_variances, \
             robot_init_variances, \
             human_n_dof, \
+            human_n_kpts, \
             human_Kp, \
             human_Kd, \
             human_K_repulse, \
@@ -55,6 +58,7 @@ def read_params():
             robot_js_topic, \
             predicted_hri_state_topic, \
             predicted_hri_cov_topic, \
+            human_state_topic, \
             hz, \
             num_steps
     
@@ -68,6 +72,7 @@ def read_params():
         human_init_variances =      np.array(rospy.get_param(node_name + '/human_init_variances'))
         robot_init_variances =      np.array(rospy.get_param(node_name + '/robot_init_variances'))
         human_n_dof =                        rospy.get_param(node_name + '/human_n_dof')
+        human_n_kpts =                       rospy.get_param(node_name + '/human_n_kpts')
         human_Kp =                           rospy.get_param(node_name + '/human_Kp')
         human_Kd =                           rospy.get_param(node_name + '/human_Kd')
         human_K_repulse =                    rospy.get_param(node_name + '/human_K_repulse')
@@ -80,6 +85,7 @@ def read_params():
         robot_js_topic =                     rospy.get_param(node_name + '/robot_js_topic', robot_js_topic)
         predicted_hri_state_topic =          rospy.get_param(node_name + '/predicted_hri_state_topic', predicted_hri_state_topic)
         predicted_hri_cov_topic =            rospy.get_param(node_name + '/predicted_hri_cov_topic', predicted_hri_cov_topic)
+        human_state_topic =                  rospy.get_param(node_name + '/human_state_topic', human_state_topic)
         hz =                                 rospy.get_param(node_name + '/hz', hz)
         num_steps =                          rospy.get_param(node_name + '/num_steps', num_steps)
 
@@ -94,6 +100,7 @@ def read_params():
             human_init_variances={human_init_variances}, \n\
             robot_init_variances={robot_init_variances}, \n\
             human_n_dof={human_n_dof}, \n\
+            human_n_kpts={human_n_kpts}, \n\
             human_Kp={human_Kp}, \n\
             human_Kd={human_Kd}, \n\
             human_K_repulse={human_K_repulse}, \n\
@@ -106,6 +113,7 @@ def read_params():
             robot_js_topic={robot_js_topic}, \n\
             predicted_hri_state_topic={predicted_hri_state_topic}, \n\
             predicted_hri_cov_topic={predicted_hri_cov_topic}, \n\
+            human_state_topic={human_state_topic}, \n\
             hz={hz}, \n\
             num_steps={num_steps}"
         )
@@ -134,6 +142,7 @@ def main():
         human_noisy_measure=human_noisy_measure,
         human_W=human_model_variances,
         human_n_dof=human_n_dof,
+        human_n_kpts=human_n_kpts,
         human_Kp=human_Kp,
         human_Kd=human_Kd,
         human_K_repulse=human_K_repulse,
@@ -142,10 +151,12 @@ def main():
         alpha=alpha,
         beta=beta,
         kappa=kappa,
+        node_name=node_name,
         skeleton_topic=skeleton_topic,
         robot_js_topic=robot_js_topic,
         predicted_hri_state_topic=predicted_hri_state_topic,
-        predicted_hri_cov_topic=predicted_hri_cov_topic
+        predicted_hri_cov_topic=predicted_hri_cov_topic,
+        human_state_topic=human_state_topic
     )
 
     rospy.loginfo("CREATED 'PREDICTOR' OBJECT:" + 
