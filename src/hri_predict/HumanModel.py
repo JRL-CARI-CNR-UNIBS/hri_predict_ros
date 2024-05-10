@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from enum import Enum
 import numpy as np
+from scipy.linalg import block_diag
 from .utils import runge_kutta
 
 class ControlLaw(Enum):
@@ -22,7 +23,7 @@ class HumanModel:
     noisy_model:        bool = field(default=False, init=True, repr=True)
     noisy_measure:      bool = field(default=False, init=True, repr=True)
       
-    n_dof:      int = field(default=18, init=True, repr=True)     # DoF: n_keypoints if KEYPOINTS, n_joints if KYN_CHAIN
+    n_dof:      int = field(default=18, init=True, repr=True)     # n_dof = 3*n_keypoints if KEYPOINTS, n_joints if KYN_CHAIN
     n_states:   int = field(init=False, repr=True)                # total number of state variables
     n_outs:     int = field(init=False, repr=True)                # number of output variables
   
@@ -57,7 +58,6 @@ class HumanModel:
         self.kynematic_model = kynematic_model
         self.noisy_model = noisy_model
         self.noisy_measure = noisy_measure
-        self.n_dof = n_dof
 
         self.n_states = 3 * self.n_dof      # number of state variables for each DoF (e.g., if 3: position, velocity, acceleration)
         self.x = np.zeros(self.n_states)
@@ -85,8 +85,12 @@ class HumanModel:
             self.R = np.zeros((self.n_outs, self.n_outs))
 
 
-    def initialize(self, x0: np.ndarray) -> None:
+    def set_state(self, x0: np.ndarray) -> None:
         self.x = x0
+
+
+    def get_state(self) -> np.ndarray:
+        return self.x
 
 
     # double integrator dynamics
@@ -151,8 +155,9 @@ class HumanModel:
 
     def h(self, x: np.ndarray) -> np.ndarray:
         if self.kynematic_model == KynematicModel.KEYPOINTS:
-            H = np.array([[1, 0, 0],
-                        [0, 1, 0]], dtype=float)
+            block = np.array([[1, 0, 0],
+                              [0, 1, 0]], dtype=float)
+            H = block_diag(*[block for _ in range(self.n_dof)])
             return H @ x
         elif self.kynematic_model == KynematicModel.KYN_CHAIN:
             return x # TODO

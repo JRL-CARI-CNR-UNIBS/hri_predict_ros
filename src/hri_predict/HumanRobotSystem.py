@@ -49,14 +49,14 @@ class HumanRobotSystem:
         self.n_outs = self.human_model.n_outs + self.robot_model.n_outs
 
 
-    def initialize(self, x0_human: np.ndarray, x0_robot: np.ndarray) -> None:
-        self.human_model.initialize(x0_human)
-        self.robot_model.initialize(x0_robot)
+    def set_state(self, x0_human: np.ndarray, x0_robot: np.ndarray) -> None:
+        self.human_model.set_state(x0_human)
+        self.robot_model.set_state(x0_robot)
 
 
-    def state(self) -> np.ndarray:
+    def get_state(self) -> np.ndarray:
         return np.concatenate((self.human_model.x, self.robot_model.x))
-
+    
 
     def dynamics(self, x0: np.ndarray, u0: np.ndarray) -> np.ndarray: 
         human_dyn = self.human_model.dynamics(x0, u0)

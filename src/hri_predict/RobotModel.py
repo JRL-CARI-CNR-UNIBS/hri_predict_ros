@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from enum import Enum
 import numpy as np
+from scipy.linalg import block_diag
 from .utils import runge_kutta
 
 class ControlLaw(Enum):
@@ -52,9 +53,13 @@ class RobotModel:
         self.K_repulse = K_repulse
 
 
-    def initialize(self, x0: np.ndarray) -> None:
+    def set_state(self, x0: np.ndarray) -> None:
         self.x = x0
         
+
+    def get_state(self) -> np.ndarray:
+        return self.x
+
 
     # double integrator dynamics
     def dynamics(self, x0: np.ndarray, u0: np.ndarray) -> np.ndarray: 
@@ -103,8 +108,9 @@ class RobotModel:
     
 
     def h(self, x: np.ndarray) -> np.ndarray:
-        H = np.array([[1, 0, 0],
-                      [0, 1, 0]], dtype=float)
+        block = np.array([[1, 0, 0],
+                            [0, 1, 0]], dtype=float)
+        H = block_diag(*[block for _ in range(self.n_dof)])
         return H @ x
 
 

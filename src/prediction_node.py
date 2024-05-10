@@ -175,25 +175,25 @@ def main():
                   "\n======================================================================\n")
 
     # Initialize the kalman_predictor
-    predictor.kalman_predictor.initialize(x0_human=predictor.human_state,
-                                          x0_robot=predictor.robot_state,
-                                          P0_human=human_init_variances,
+    predictor.kalman_predictor.initialize(P0_human=human_init_variances,
                                           P0_robot=robot_init_variances)
-    
 
     # Set the rate of the node
     rate = rospy.Rate(hz)
 
     # Main loop
     while not rospy.is_shutdown():
-        # UPDATE human_robot_system CURRENT state using kalman_predictor
-        current_meas = np.concatenate((predictor.human_state, predictor.robot_state))
+        # DEBUG: Print the current human and robot measured states
+        rospy.loginfo(f"Current human measurement: Size: {predictor.human_meas.shape}\nValue: {predictor.human_meas}\n"
+                      f"Current robot measurement: Size: {predictor.robot_meas.shape}\nValue: {predictor.robot_meas}\n")
 
-        # DUBUG: Print the current state
-        rospy.loginfo(f"Current human state: {predictor.human_state}\n")
-        rospy.loginfo(f"Current robot state: {predictor.robot_state}\n")
-        rospy.loginfo(f"Current State: {current_meas}\n")
+        # Check if human measurements are available. If not, skip model and kalman filter update
+        if (np.isnan(predictor.human_meas)).all():
+            rospy.logwarn("Human measurements are not available. Skipping prediction.")
+            continue
 
+        # UPDATE human_robot_system CURRENT measurement using kalman_predictor
+        current_meas = np.concatenate((predictor.human_meas, predictor.robot_meas))
         predictor.kalman_predictor.update(current_meas)
 
         # PREDICT human_robot_system NEXT state using kalman_predictor
@@ -210,9 +210,9 @@ def main():
         predictor.publish_predicted_state(pred_state)
         predictor.publish_predicted_cov(pred_cov)
 
-        rospy.spin()
-        rate.sleep()
 
+    rospy.spin()
+    rate.sleep()
     rospy.on_shutdown(shutdown_hook)
 
 

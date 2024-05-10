@@ -1,5 +1,6 @@
 from filterpy.kalman import MerweScaledSigmaPoints, UnscentedKalmanFilter, unscented_transform
 from dataclasses import dataclass, field
+from typing import Optional
 import numpy as np
 import scipy.linalg
 from .HumanRobotSystem import HumanRobotSystem
@@ -51,7 +52,8 @@ class KalmanPredictor:
                                       human_Kd=human_Kd,
                                       human_K_repulse=human_K_repulse,
                                       robot_control_law=robot_control_law,
-                                      robot_n_dof=robot_n_dof)      
+                                      robot_n_dof=robot_n_dof)   
+
        
         self.alpha = alpha
         self.beta = beta
@@ -70,10 +72,13 @@ class KalmanPredictor:
                                                    points=self.sigma_points)
 
 
-    def initialize(self, x0_human: np.ndarray, x0_robot: np.ndarray, P0_human: np.ndarray, P0_robot: np.ndarray) -> None:
+    def initialize(self, P0_human: np.ndarray, P0_robot: np.ndarray,
+                   x0_human: Optional[np.ndarray]=None,
+                   x0_robot: Optional[np.ndarray]=None) -> None:
         # Initialize the STATE of the model and the Kalman filter
-        self.model.initialize(x0_human, x0_robot)
-        self.kalman_filter.x = self.model.state()
+        if x0_human is not None and x0_robot is not None:
+            self.model.set_state(x0_human, x0_robot)
+        self.kalman_filter.x = self.model.get_state()
 
         # Initialize the STATE COVARIANCE matrix
         P_human = np.diag(P0_human)
@@ -96,10 +101,14 @@ class KalmanPredictor:
 
     def predict(self):
         self.kalman_filter.predict()
+        self.model.set_state(self.kalman_filter.x[:self.model.human_model.n_states],
+                             self.kalman_filter.x[self.model.human_model.n_states:])
 
 
     def update(self, z: np.ndarray):
         self.kalman_filter.update(z)
+        self.model.set_state(self.kalman_filter.x[:self.model.human_model.n_states],
+                             self.kalman_filter.x[self.model.human_model.n_states:])
 
 
     def k_step_predict(self, k: int) -> tuple:

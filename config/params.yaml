@@ -1,8 +1,8 @@
 dt: 0.01
 human_control_law: CONST_VEL
 human_kynematic_model: KEYPOINTS
-human_n_dof: 18
-human_n_kpts: 18 # Number of keypoints (equal to human_n_dof if human_kynematic_model is KEYPOINTS)
+human_n_dof: 3    # Number of degrees of freedom (i.e., number of joints if human_kynematic_model is KYN_CHAIN)
+human_n_kpts: 18  # Number of keypoints (equal to human_n_dof if human_kynematic_model is KEYPOINTS)
 human_noisy_model: False
 human_noisy_measure: False
 human_model_variances: [0.1 0.1 0.1     0.1 0.1 0.1     0.1 0.1 0.1]      # [pos, vel, acc] x human_n_dof
