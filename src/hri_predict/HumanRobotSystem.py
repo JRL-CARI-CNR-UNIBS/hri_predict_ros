@@ -48,6 +48,16 @@ class HumanRobotSystem:
         self.n_states = self.human_model.n_states + self.robot_model.n_states
         self.n_outs = self.human_model.n_outs + self.robot_model.n_outs
 
+        # DEBUG: Print the number of states and outputs
+        print("\n======================================")
+        print("    self.human_model.n_states: ", self.human_model.n_states)
+        print("    self.robot_model.n_states: ", self.robot_model.n_states)
+        print("    self.n_states: ", self.n_states)
+        print("    self.human_model.n_outs: ", self.human_model.n_outs)
+        print("    self.robot_model.n_outs: ", self.robot_model.n_outs)
+        print("    self.n_outs: ", self.n_outs)
+        print("======================================\n")
+
 
     def set_state(self, x0_human: np.ndarray, x0_robot: np.ndarray) -> None:
         self.human_model.set_state(x0_human)

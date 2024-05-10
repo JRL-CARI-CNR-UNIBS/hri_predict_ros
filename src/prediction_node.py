@@ -183,17 +183,21 @@ def main():
 
     # Main loop
     while not rospy.is_shutdown():
+        # PREDICT human_robot_system NEXT state using kalman_predictor
+        predictor.kalman_predictor.predict()
+
         # DEBUG: Print the current human and robot measured states
         rospy.loginfo(f"Current human measurement: Size: {predictor.human_meas.shape}\nValue: {predictor.human_meas}\n"
                       f"Current robot measurement: Size: {predictor.robot_meas.shape}\nValue: {predictor.robot_meas}\n")
 
         # Check if human measurements are available. If not, skip model and kalman filter update
         if (np.isnan(predictor.human_meas)).all():
-            rospy.logwarn("Human measurements are not available. Skipping prediction.")
+            rospy.logwarn("Human measurements are not available. Skipping prediction update.")
             continue
 
         # UPDATE human_robot_system CURRENT measurement using kalman_predictor
         current_meas = np.concatenate((predictor.human_meas, predictor.robot_meas))
+        rospy.loginfo(f"Current measurement: {current_meas}")
         predictor.kalman_predictor.update(current_meas)
 
         # PREDICT human_robot_system NEXT state using kalman_predictor

@@ -165,7 +165,7 @@ class Predictor:
 
             # Update current human state with nan values
             if self.kalman_predictor.model.human_model.kynematic_model == HM.KynematicModel.KEYPOINTS:
-                self.human_meas = np.full(self.kalman_predictor.model.n_outs, np.nan)
+                self.human_meas = np.full(self.human_meas.shape, np.nan)
 
             elif self.kalman_predictor.model.human_model.kynematic_model == HM.KynematicModel.KYN_CHAIN:
                 pass # TODO: implement

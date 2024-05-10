@@ -59,10 +59,14 @@ class HumanModel:
         self.noisy_model = noisy_model
         self.noisy_measure = noisy_measure
 
-        self.n_states = 3 * self.n_dof      # number of state variables for each DoF (e.g., if 3: position, velocity, acceleration)
-        self.x = np.zeros(self.n_states)
+        # Override n_dof for "KEYPOINTS" kinematic model: n_DoF = (x, y, z) for each keypoint
+        if self.kynematic_model == KynematicModel.KEYPOINTS:
+            self.n_dof = 3 * n_dof
+        
+        self.n_states = 3 * self.n_dof # (position, velocity, acceleration) for each DoF
+        self.n_outs = 2 * self.n_dof # (position, velocity) for each DoF
 
-        self.n_outs = 2 * self.n_dof        # number of output variables for each DoF (e.g., if 2: position, velocity)
+        self.x = np.zeros(self.n_states)
 
         self.p_idx = np.arange(0, self.n_states, 3)
         self.v_idx = np.arange(1, self.n_states, 3)
@@ -103,11 +107,12 @@ class HumanModel:
 
     
     def f(self, x: np.ndarray, dt: float) -> np.ndarray:
-        F = np.array([[1, dt,  0],
-                      [0,  1, dt],
-                      [0,  0,  1]], dtype=float)
+        block = np.array([[1, dt,  0],
+                          [0,  1, dt],
+                          [0,  0,  1]], dtype=float)
+        F = block_diag(*[block for _ in range(self.n_dof)])
         return F @ x
-    
+       
 
     def step(self) -> None:
         self.x = runge_kutta(self.dynamics,                                         # explicit RK4 integration
