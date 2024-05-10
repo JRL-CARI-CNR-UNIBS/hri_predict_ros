@@ -21,5 +21,7 @@ robot_js_topic: "/ur10/joint_states"
 predicted_hri_state_topic: "/predicted_hri_state"
 predicted_hri_cov_topic: "/predicted_hri_cov"
 human_state_topic: "/human_state"
+camera_frame: "zed_camera_link"
+world_frame: "world"
 hz: 100
 num_steps: 10

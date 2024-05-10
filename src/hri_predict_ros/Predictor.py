@@ -6,16 +6,17 @@ import hri_predict.RobotModel as RM
 from hri_predict.KalmanPredictor import KalmanPredictor
 
 import rospy
+import tf
 from zed_msgs.msg import ObjectsStamped
 from sensor_msgs.msg import JointState
-from geometry_msgs.msg import Vector3
+from geometry_msgs.msg import Vector3, PointStamped
 from std_msgs.msg import Float64MultiArray
 from hri_predict_ros.msg import KeypointState
 
 
 @dataclass
 class Predictor:
-    kalman_predictor:       KalmanPredictor = field(init=True, repr=True)
+    kalman_predictor:       KalmanPredictor = field(init=False, repr=True)
     n_kpts:                 int = field(default=0, init=False, repr=True)
     skeleton_kpts:          np.ndarray = field(default=np.array([]), init=False, repr=False)
     skeleton_kpts_prev:     np.ndarray = field(default=np.array([]), init=False, repr=False)
@@ -28,6 +29,9 @@ class Predictor:
     pred_state_pub:         rospy.Publisher = field(init=True, repr=False)
     covariance_pub:         rospy.Publisher = field(init=True, repr=False)
     human_state_pub:        rospy.Publisher = field(init=True, repr=False)
+    tf_listener:            tf.TransformListener = field(init=False, repr=False)
+    camera_frame:           str = field(default="", init=True, repr=True)
+    world_frame:            str = field(default="world", init=True, repr=True)
 
 
     def __init__(self,
@@ -52,7 +56,9 @@ class Predictor:
                  robot_js_topic: str="",
                  predicted_hri_state_topic: str="",
                  predicted_hri_cov_topic: str="",
-                 human_state_topic: str="") -> None:
+                 human_state_topic: str="",
+                 camera_frame: str="",
+                 world_frame: str="world") -> None:
         
         human_control_law_      = HM.ControlLaw[human_control_law]
         human_kynematic_model_  = HM.KynematicModel[human_kynematic_model]
@@ -91,6 +97,13 @@ class Predictor:
         self.covariance_pub     = rospy.Publisher(node_name + predicted_hri_cov_topic, Float64MultiArray, queue_size=10)
         self.human_state_pub    = rospy.Publisher(node_name + human_state_topic, KeypointState, queue_size=10)
 
+        # Initialize camera and world frames
+        self.camera_frame = camera_frame
+        self.world_frame = world_frame
+
+        # Initialize TF listener
+        self.tf_listener = tf.TransformListener()
+
 
     def read_skeleton_cb(self, msg: ObjectsStamped) -> None:
         if msg.objects:
@@ -98,8 +111,28 @@ class Predictor:
                 # Extract skeleton keypoints from message ([x, y, z] for each kpt)
                 kpts = np.array([[kp.kp] for kp in obj.skeleton_3d.keypoints])
                 kpts = kpts[:self.n_kpts] # select only the first n_kpts
+
                 self.skeleton_kpts = np.reshape(kpts, (self.n_kpts, 3)) # reshape to (n_kpts, 3)
                 self.skeleton_time = msg.header.stamp.to_sec()
+
+                # Convert keypoints to world frame
+                for i in range(self.n_kpts):
+                    # Create a PointStamped message for the keypoint position
+                    kpt = PointStamped()
+                    kpt.header.stamp = rospy.Time.now()
+                    kpt.header.frame_id = self.camera_frame
+                    kpt.point.x = self.skeleton_kpts[i][0]
+                    kpt.point.y = self.skeleton_kpts[i][1]
+                    kpt.point.z = self.skeleton_kpts[i][2]
+
+                    # Transform the point to the world frame
+                    kpt_world = self.tf_listener.transformPoint(self.world_frame, kpt)
+
+                    # Update the keypoint position in the world frame
+                    self.skeleton_kpts[i][0] = kpt_world.point.x
+                    self.skeleton_kpts[i][1] = kpt_world.point.y
+                    self.skeleton_kpts[i][2] = kpt_world.point.z
+
                 # rospy.loginfo(f"Received skeleton keypoints:\n{self.skeleton_kpts}\nat time: {self.skeleton_time}")
             
             if self.kalman_predictor.model.human_model.kynematic_model == HM.KynematicModel.KEYPOINTS:
@@ -137,8 +170,11 @@ class Predictor:
         human_state_msg.header.stamp = rospy.Time.now()
         human_state_msg.position = []
         human_state_msg.velocity = []
+
         for i in range(self.n_kpts): # [pos_x, vel_x, pos_y, vel_y, pos_z, vel_z] for each keypoint
-            rospy.loginfo(f"Publishing keypoint #{i}\t: pos={pos[i]} \t|\t vel={vel[i]}")
+            # rospy.loginfo(f"Publishing keypoint #{i}\t: pos={pos[i]} \t|\t vel={vel[i]}")
+
+            # Create a Vector3 message for the keypoint
             human_state_msg.name.append(f"kp_{i}")
             kpt_pos = Vector3()
             kpt_pos.x = pos[i][0]
@@ -163,7 +199,8 @@ class Predictor:
 
     def publish_state(self, state):
         state_msg = Float64MultiArray()
-        state_msg.data = state.flatten().tolist()
+        # Each row corresponds to an element and each column corresponds to a future value
+        state_msg.data = state.flatten('F').tolist() # flatten the 2D array into a 1D array in column-major (Fortran-style) order, which means it concatenates the columns together
         self.pred_state_pub.publish(state_msg)
         
     def publish_covariance(self, covariance):

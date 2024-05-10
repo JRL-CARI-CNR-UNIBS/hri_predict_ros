@@ -31,6 +31,8 @@ robot_js_topic = "/robot/joint_states"
 predicted_hri_state_topic = "/predicted_hri_state"
 predicted_hri_cov_topic = "/predicted_hri_cov"
 human_state_topic = "/human_state"
+camera_frame = "zed_camera_link"  # if sl::REFERENCE_FRAME::WORLD for the ZED camera is selected
+world_frame = "world"
 hz = 100
 num_steps = 10
 
@@ -59,6 +61,8 @@ def read_params():
             predicted_hri_state_topic, \
             predicted_hri_cov_topic, \
             human_state_topic, \
+            camera_frame, \
+            world_frame, \
             hz, \
             num_steps
     
@@ -86,6 +90,8 @@ def read_params():
         predicted_hri_state_topic =          rospy.get_param(node_name + '/predicted_hri_state_topic', predicted_hri_state_topic)
         predicted_hri_cov_topic =            rospy.get_param(node_name + '/predicted_hri_cov_topic', predicted_hri_cov_topic)
         human_state_topic =                  rospy.get_param(node_name + '/human_state_topic', human_state_topic)
+        camera_frame =                       rospy.get_param(node_name + '/camera_frame', camera_frame)
+        world_frame =                        rospy.get_param(node_name + '/world_frame', world_frame)
         hz =                                 rospy.get_param(node_name + '/hz', hz)
         num_steps =                          rospy.get_param(node_name + '/num_steps', num_steps)
 
@@ -114,6 +120,8 @@ def read_params():
             predicted_hri_state_topic={predicted_hri_state_topic}, \n\
             predicted_hri_cov_topic={predicted_hri_cov_topic}, \n\
             human_state_topic={human_state_topic}, \n\
+            camera_frame={camera_frame}, \n\
+            world_frame={world_frame}, \n\
             hz={hz}, \n\
             num_steps={num_steps}"
         )
@@ -156,7 +164,9 @@ def main():
         robot_js_topic=robot_js_topic,
         predicted_hri_state_topic=predicted_hri_state_topic,
         predicted_hri_cov_topic=predicted_hri_cov_topic,
-        human_state_topic=human_state_topic
+        human_state_topic=human_state_topic,
+        camera_frame=camera_frame,
+        world_frame=world_frame
     )
 
     rospy.loginfo("CREATED 'PREDICTOR' OBJECT:" + 
@@ -176,8 +186,6 @@ def main():
 
     # Main loop
     while not rospy.is_shutdown():
-        rospy.spin()
-
         # UPDATE human_robot_system CURRENT state using kalman_predictor
         current_meas = np.concatenate((predictor.human_state, predictor.robot_state))
         predictor.kalman_predictor.update(current_meas)
@@ -188,10 +196,15 @@ def main():
         # k-step ahead prediction of human_robot_system state
         pred_state, pred_cov = predictor.kalman_predictor.k_step_predict(num_steps)
 
+        # DUBUG: Print the predicted state and covariance
+        rospy.logerr(f"Predicted State: {pred_state}\n")
+        rospy.logerr(f"Predicted Covariance: {pred_cov}\n\n")
+
         # Publish the sequence of predicted states along with their covariances
         predictor.publish_predicted_state(pred_state)
         predictor.publish_predicted_cov(pred_cov)
 
+        rospy.spin()
         rate.sleep()
 
     rospy.on_shutdown(shutdown_hook)
