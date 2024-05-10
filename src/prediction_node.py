@@ -188,6 +188,12 @@ def main():
     while not rospy.is_shutdown():
         # UPDATE human_robot_system CURRENT state using kalman_predictor
         current_meas = np.concatenate((predictor.human_state, predictor.robot_state))
+
+        # DUBUG: Print the current state
+        rospy.loginfo(f"Current human state: {predictor.human_state}\n")
+        rospy.loginfo(f"Current robot state: {predictor.robot_state}\n")
+        rospy.loginfo(f"Current State: {current_meas}\n")
+
         predictor.kalman_predictor.update(current_meas)
 
         # PREDICT human_robot_system NEXT state using kalman_predictor
@@ -197,8 +203,8 @@ def main():
         pred_state, pred_cov = predictor.kalman_predictor.k_step_predict(num_steps)
 
         # DUBUG: Print the predicted state and covariance
-        rospy.logerr(f"Predicted State: {pred_state}\n")
-        rospy.logerr(f"Predicted Covariance: {pred_cov}\n\n")
+        rospy.loginfo(f"Predicted State: {pred_state}\n")
+        rospy.loginfo(f"Predicted Covariance: {pred_cov}\n\n")
 
         # Publish the sequence of predicted states along with their covariances
         predictor.publish_predicted_state(pred_state)

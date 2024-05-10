@@ -153,17 +153,27 @@ class Predictor:
         
         else:
             rospy.logwarn("No skeleton keypoints received.")
-            self.human_state = np.array([])
             self.skeleton_kpts = np.full(self.skeleton_kpts.shape, np.nan)
             self.skeleton_time = np.nan
             pos = np.full(self.skeleton_kpts.shape, np.nan)
             vel = np.full(self.skeleton_kpts.shape, np.nan)
+
+            # Update current human state with nan values
+            if self.kalman_predictor.model.human_model.kynematic_model == HM.KynematicModel.KEYPOINTS:
+                self.human_state = np.full(self.skeleton_kpts.shape, np.nan)
+                np.reshape(self.human_state, (1, -1))
+
+            elif self.kalman_predictor.model.human_model.kynematic_model == HM.KynematicModel.KYN_CHAIN:
+                pass # TODO: implement
 
         # Update previous state
         self.skeleton_kpts_prev = self.skeleton_kpts
         self.skeleton_time_prev = self.skeleton_time
         
         # rospy.loginfo(f"Received human state:\n{self.human_state}")
+
+        # Update state in kalman_predictor
+        self.kalman_predictor.model.human_model.x = self.human_state
 
         # Publish current human state
         human_state_msg = KeypointState()
@@ -197,11 +207,16 @@ class Predictor:
         np.reshape(self.robot_state, (1, -1))
         # rospy.loginfo(f"Received robot state: {self.robot_state}")
 
+        # Update state in kalman_predictor
+        self.kalman_predictor.model.robot_model.x = self.robot_state
+
+
     def publish_state(self, state):
         state_msg = Float64MultiArray()
         # Each row corresponds to an element and each column corresponds to a future value
         state_msg.data = state.flatten('F').tolist() # flatten the 2D array into a 1D array in column-major (Fortran-style) order, which means it concatenates the columns together
         self.pred_state_pub.publish(state_msg)
+        
         
     def publish_covariance(self, covariance):
         covariance_msg = Float64MultiArray()
