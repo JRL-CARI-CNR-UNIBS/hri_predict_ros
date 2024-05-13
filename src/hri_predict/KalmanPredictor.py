@@ -2,7 +2,7 @@ from filterpy.kalman import MerweScaledSigmaPoints, UnscentedKalmanFilter, unsce
 from dataclasses import dataclass, field
 from typing import Optional
 import numpy as np
-import scipy.linalg
+from scipy.linalg import block_diag
 from .HumanRobotSystem import HumanRobotSystem
 from . import HumanModel as HM
 from . import RobotModel as RM
@@ -90,19 +90,19 @@ class KalmanPredictor:
 
         P_human = np.diag(P0_val_human)
         P_robot = np.diag(P0_val_robot)
-        P = scipy.linalg.block_diag(P_human, P_robot)
+        P = block_diag(P_human, P_robot)
         self.kalman_filter.P = P
 
         # Initialize the MODEL UNCERTAINTY matrix
         Q_human = self.model.human_model.W
         Q_robot = np.zeros((self.model.robot_model.n_states, self.model.robot_model.n_states))
-        Q = scipy.linalg.block_diag(Q_human, Q_robot)
+        Q = block_diag(Q_human, Q_robot)
         self.kalman_filter.Q = Q
 
         # Initialize the MEASUREMENT NOISE matrix
         R_human = self.model.human_model.R
         R_robot = np.zeros((self.model.robot_model.n_outs, self.model.robot_model.n_outs))
-        R = scipy.linalg.block_diag(R_human, R_robot)
+        R = block_diag(R_human, R_robot)
         self.kalman_filter.R = R
 
         print("\n======================================")
@@ -129,8 +129,9 @@ class KalmanPredictor:
 
     def k_step_predict(self, k: int) -> tuple:
         # calculate sigma points for current mean and covariance
+        jitter = np.eye(self.kalman_filter.P.shape[0]) * 1e-6
         sigmas = self.kalman_filter.points_fn.sigma_points(self.kalman_filter.x,
-                                                           self.kalman_filter.P)
+                                                           self.kalman_filter.P + jitter)
         
         sigmas_f = np.zeros((len(sigmas), self.kalman_filter._dim_x))               # sigma points after passing through dynamics function
         xx = np.zeros((k, self.kalman_filter._dim_x))                               # mean after passing through dynamics function

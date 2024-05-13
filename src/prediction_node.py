@@ -1,9 +1,25 @@
 #!/usr/bin/env python3
 
-import sys
-import rospy
+import sys, os
+import rospy, rospkg
 import numpy as np
 from hri_predict_ros.Predictor import Predictor
+import matplotlib.pyplot as plt
+from scipy.linalg import block_diag
+
+
+# Create a RosPack object
+rospack = rospkg.RosPack()
+
+# Get the path to the package this script is in
+package_path = rospack.get_path('hri_predict_ros')
+
+# Define the path to the logs directory
+logs_dir = os.path.join(package_path, 'logs')
+
+# Check if the logs directory exists, if not, create it
+if not os.path.exists(logs_dir):
+    os.makedirs(logs_dir)
 
 
 # Define global variables
@@ -206,7 +222,26 @@ def main():
     rate = rospy.Rate(hz)
 
     # Main loop
+    i = 0
+    plt.figure()
     while not rospy.is_shutdown():
+        # Write the state covariance matrix to a new file 'P_i.csv'
+        with open(os.path.join(logs_dir, f'P_{i}.csv'), 'wb') as f:
+            np.savetxt(f, predictor.kalman_predictor.kalman_filter.P, delimiter=",")
+            rospy.loginfo(f"Saved state covariance matrix to 'P_{i}.csv'")
+
+        # Plot the covariance matrix P as a heatmap
+        plt.imshow(predictor.kalman_predictor.kalman_filter.P, cmap='viridis', interpolation='nearest')
+        plt.colorbar()
+        plt.title('Covariance Matrix P at iteration ' + str(i))
+        plt.xlabel('State Dimension')
+        plt.ylabel('State Dimension')
+        plt.show(block=False)
+        plt.pause(0.01)
+        plt.clf()
+
+        i += 1
+
         # PREDICT human_robot_system NEXT state using kalman_predictor
         predictor.kalman_predictor.predict()
 
@@ -223,6 +258,8 @@ def main():
         current_meas = np.concatenate((predictor.human_meas, predictor.robot_meas))
         rospy.loginfo(f"Current measurement: {current_meas}")
         predictor.kalman_predictor.update(current_meas)
+
+        continue
 
         # k-step ahead prediction of human_robot_system state
         pred_state, pred_cov = predictor.kalman_predictor.k_step_predict(num_steps)
