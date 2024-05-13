@@ -23,7 +23,8 @@ class HumanModel:
     noisy_model:        bool = field(default=False, init=True, repr=True)
     noisy_measure:      bool = field(default=False, init=True, repr=True)
       
-    n_dof:      int = field(default=18, init=True, repr=True)     # n_dof = 3*n_keypoints if KEYPOINTS, n_joints if KYN_CHAIN
+    n_kpts:     int = field(default=18, init=True, repr=True)     # number of keypoints
+    n_dof:      int = field(default=54, init=True, repr=True)     # n_dof = 3*n_keypoints if KEYPOINTS, n_joints if KYN_CHAIN
     n_states:   int = field(init=False, repr=True)                # total number of state variables
     n_outs:     int = field(init=False, repr=True)                # number of output variables
   
@@ -47,8 +48,9 @@ class HumanModel:
                  kynematic_model: KynematicModel=KynematicModel.KEYPOINTS,
                  noisy_model: bool=False,
                  noisy_measure: bool=False,
-                 W: np.ndarray=np.array([], dtype=float),
-                 R: np.ndarray=np.array([], dtype=float),
+                 R: dict={},
+                 W: dict={},
+                 n_kpts: int=18,
                  n_dof: int=3,
                  dt: float=0.01,
                  Kp: float=1.0,
@@ -61,32 +63,49 @@ class HumanModel:
 
         # Override n_dof for "KEYPOINTS" kinematic model: n_DoF = (x, y, z) for each keypoint
         if self.kynematic_model == KynematicModel.KEYPOINTS:
-            self.n_dof = 3 * n_dof
+            self.n_dof = 3 * n_kpts
         
         self.n_states = 3 * self.n_dof # (position, velocity, acceleration) for each DoF
         self.n_outs = 2 * self.n_dof # (position, velocity) for each DoF
 
         self.x = np.zeros(self.n_states)
 
-        self.p_idx = np.arange(0, self.n_states, 3)
-        self.v_idx = np.arange(1, self.n_states, 3)
-        self.a_idx = np.arange(2, self.n_states, 3)
-        self.pv_idx = np.sort(np.concatenate((self.p_idx, self.v_idx)))
-
         self.dt = dt
         self.Kp = Kp
         self.Kd = Kd
         self.K_repulse = K_repulse
 
-        if self.noisy_model:
-            self.W = W
-        else:
-            self.W = np.zeros((self.n_states, self.n_states))
+        # State indices
+        self.p_idx = np.arange(0, self.n_states, 3)
+        self.v_idx = np.arange(1, self.n_states, 3)
+        self.a_idx = np.arange(2, self.n_states, 3)
+        self.pv_idx = np.sort(np.concatenate((self.p_idx, self.v_idx)))
 
-        if self.noisy_measure:
-            self.R = R
+        # Model uncertainty matrix
+        W_values = [value for value in W.values()] # [pos, vel, acc] for the single DoF
+        if self.noisy_model:
+            W_block = np.diag(W_values)
         else:
-            self.R = np.zeros((self.n_outs, self.n_outs))
+            W_block = np.zeros((len(W_values), len(W_values))) 
+        self.W = block_diag(*[W_block for _ in range(self.n_dof)]) # replicate the block for each DoF
+
+        # Measurement noise matrix
+        R_values = [value for sublist in R.values() for value in sublist.values()] # [pos_x, vel_x, pos_y, vel_y, pos_z, vel_z] for the single keypoint
+        if self.noisy_measure:
+            R_block = np.diag(R_values)
+        else:
+            R_block = np.zeros((len(R_values), len(R_values)))
+        self.R = block_diag(*[R_block for _ in range(self.n_kpts)]) # replicate the block for each keypoint
+
+        # DEBUG: Print the model parameters
+        print("\n======================================")
+        print("    HumanModel:")
+        print("    self.x: ", self.x)
+        print("    self.n_dof: ", self.n_dof)
+        print("    self.n_states: ", self.n_states)
+        print("    self.n_outs: ", self.n_outs)
+        print("    self.R: ", self.R, ", shape: ", self.R.shape)
+        print("======================================\n")
 
 
     def set_state(self, x0: np.ndarray) -> None:

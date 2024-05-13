@@ -40,9 +40,10 @@ class Predictor:
                  human_kynematic_model: str='KEYPOINTS',
                  human_noisy_model: bool=False,
                  human_noisy_measure: bool=False,
-                 human_W: np.ndarray=np.array([], dtype=float),
-                 human_n_dof: int=3,
+                 human_R: dict={},
+                 human_W: dict={},
                  human_n_kpts: int=18,
+                 human_n_dof: int=3,
                  human_Kp: float=1.0,
                  human_Kd: float=1.0,
                  human_K_repulse: float=1.0,
@@ -63,7 +64,6 @@ class Predictor:
         human_control_law_      = HM.ControlLaw[human_control_law]
         human_kynematic_model_  = HM.KynematicModel[human_kynematic_model]
         robot_control_law_      = RM.ControlLaw[robot_control_law]
-        human_W_                = np.diag(human_W)
 
         # Override the number of DoF for the human agent if the kynematic model is KEYPOINTS
         if human_kynematic_model_ == HM.KynematicModel.KEYPOINTS:
@@ -76,7 +76,8 @@ class Predictor:
             human_kynematic_model=human_kynematic_model_,
             human_noisy_model=human_noisy_model,
             human_noisy_measure=human_noisy_measure,
-            human_W=human_W_,
+            human_R=human_R,
+            human_W=human_W,
             human_n_dof=human_n_dof,
             human_Kp=human_Kp,
             human_Kd=human_Kd,

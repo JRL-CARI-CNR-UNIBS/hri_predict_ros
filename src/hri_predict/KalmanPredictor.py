@@ -27,8 +27,9 @@ class KalmanPredictor:
                  human_kynematic_model: HM.KynematicModel=HM.KynematicModel.KEYPOINTS,
                  human_noisy_model: bool=False,
                  human_noisy_measure: bool=False,
-                 human_W: np.ndarray=np.array([], dtype=float),
-                 human_R: np.ndarray=np.array([], dtype=float),
+                 human_R: dict={},
+                 human_W: dict={},
+                 human_n_kpts: int=18,
                  human_n_dof: int=3,
                  human_Kp: float=1.0,
                  human_Kd: float=1.0,
@@ -45,8 +46,9 @@ class KalmanPredictor:
                                       human_kynematic_model=human_kynematic_model,
                                       human_noisy_model=human_noisy_model,
                                       human_noisy_measure=human_noisy_measure,
-                                      human_W=human_W,
                                       human_R=human_R,
+                                      human_W=human_W,
+                                      human_n_kpts=human_n_kpts,
                                       human_n_dof=human_n_dof,
                                       human_Kp=human_Kp,
                                       human_Kd=human_Kd,
@@ -72,7 +74,7 @@ class KalmanPredictor:
                                                    points=self.sigma_points)
 
 
-    def initialize(self, P0_human: np.ndarray, P0_robot: np.ndarray,
+    def initialize(self, P0_human: dict, P0_robot: dict,
                    x0_human: Optional[np.ndarray]=None,
                    x0_robot: Optional[np.ndarray]=None) -> None:
         # Initialize the STATE of the model and the Kalman filter
@@ -81,8 +83,13 @@ class KalmanPredictor:
         self.kalman_filter.x = self.model.get_state()
 
         # Initialize the STATE COVARIANCE matrix
-        P_human = np.diag(P0_human)
-        P_robot = np.diag(P0_robot)
+        P0_val_human = [value for value in P0_human.values()] # [pos, vel, acc] for the single DoF
+        P0_val_human = np.tile(P0_val_human, self.model.human_model.n_dof) # replicate for each DoF
+        P0_val_robot = [value for value in P0_robot.values()] # [pos, vel, acc] for the single DoF
+        P0_val_robot = np.tile(P0_val_robot, self.model.robot_model.n_dof) # replicate for each DoF
+
+        P_human = np.diag(P0_val_human)
+        P_robot = np.diag(P0_val_robot)
         P = scipy.linalg.block_diag(P_human, P_robot)
         self.kalman_filter.P = P
 
@@ -97,6 +104,15 @@ class KalmanPredictor:
         R_robot = np.zeros((self.model.robot_model.n_outs, self.model.robot_model.n_outs))
         R = scipy.linalg.block_diag(R_human, R_robot)
         self.kalman_filter.R = R
+
+        print("\n======================================")
+        print("    Human state ", self.model.human_model.get_state(), ", shape: ", self.model.human_model.get_state().shape)
+        print("    Robot state ", self.model.robot_model.get_state(), ", shape: ", self.model.robot_model.get_state().shape)
+        print("    Initial STATE: ", self.kalman_filter.x, ", shape: ", self.kalman_filter.x.shape)
+        print("    Initial STATE COVARIANCE: ", self.kalman_filter.P, ", shape: ", self.kalman_filter.P.shape)
+        print("    MODEL UNCERTAINTY matrix: ", self.kalman_filter.Q, ", shape: ", self.kalman_filter.Q.shape)
+        print("    MEASUREMENT NOISE matrix: ", self.kalman_filter.R, ", shape: ", self.kalman_filter.R.shape)
+        print("======================================\n")
 
 
     def predict(self):

@@ -71,9 +71,10 @@ class RobotModel:
     
     
     def f(self, x: np.ndarray, dt: float) -> np.ndarray:
-        F = np.array([[1, dt,  0],
-                      [0,  1, dt],
-                      [0,  0,  1]], dtype=float)
+        block = np.array([[1, dt,  0],
+                          [0,  1, dt],
+                          [0,  0,  1]], dtype=float)
+        F = block_diag(*[block for _ in range(self.n_dof)])
         return F @ x
 
 

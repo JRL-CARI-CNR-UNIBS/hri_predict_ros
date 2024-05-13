@@ -13,9 +13,10 @@ human_control_law = None
 human_kynematic_model = None
 human_noisy_model = None
 human_noisy_measure = None
-human_model_variances = None
-human_init_variances = None
-robot_init_variances = None
+human_meas_variance = None
+human_model_variance = None
+human_init_variance = None
+robot_init_variance = None
 human_n_dof = None
 human_n_kpts = None
 human_Kp = None
@@ -43,9 +44,10 @@ def read_params():
             human_kynematic_model, \
             human_noisy_model, \
             human_noisy_measure, \
-            human_model_variances, \
-            human_init_variances, \
-            robot_init_variances, \
+            human_meas_variance, \
+            human_model_variance, \
+            human_init_variance, \
+            robot_init_variance, \
             human_n_dof, \
             human_n_kpts, \
             human_Kp, \
@@ -65,16 +67,36 @@ def read_params():
             world_frame, \
             hz, \
             num_steps
-    
+
     try:
         dt =                                 rospy.get_param(node_name + '/dt')
         human_control_law =                  rospy.get_param(node_name + '/human_control_law')
         human_kynematic_model =              rospy.get_param(node_name + '/human_kynematic_model')
         human_noisy_model =                  rospy.get_param(node_name + '/human_noisy_model')
         human_noisy_measure =                rospy.get_param(node_name + '/human_noisy_measure')
-        human_model_variances =     np.array(rospy.get_param(node_name + '/human_model_variances'))
-        human_init_variances =      np.array(rospy.get_param(node_name + '/human_init_variances'))
-        robot_init_variances =      np.array(rospy.get_param(node_name + '/robot_init_variances'))
+
+        human_meas_variance = {} # [pos, vel] for each axis (x, y, z)
+        for axis in ['x', 'y', 'z']:
+            human_meas_variance[axis] = {}
+            for var_type in ['pos', 'vel']:
+                param_name = f'/human_meas_variance/{axis}/{var_type}'
+                human_meas_variance[axis][var_type] = rospy.get_param(node_name + param_name)
+
+        human_model_variance = {} # [pos, vel, acc] for each DoF
+        for var_type in ['pos', 'vel', 'acc']:
+                param_name = f'/human_model_variance/{var_type}'
+                human_model_variance[var_type] = rospy.get_param(node_name + param_name)
+
+        human_init_variance = {} # [pos, vel, acc] for each DoF
+        for var_type in ['pos', 'vel', 'acc']:
+                param_name = f'/human_init_variance/{var_type}'
+                human_init_variance[var_type] = rospy.get_param(node_name + param_name)
+
+        robot_init_variance = {} # [pos, vel, acc] for each DoF
+        for var_type in ['pos', 'vel', 'acc']:
+                param_name = f'/robot_init_variance/{var_type}'
+                robot_init_variance[var_type] = rospy.get_param(node_name + param_name)
+
         human_n_dof =                        rospy.get_param(node_name + '/human_n_dof')
         human_n_kpts =                       rospy.get_param(node_name + '/human_n_kpts')
         human_Kp =                           rospy.get_param(node_name + '/human_Kp')
@@ -102,9 +124,10 @@ def read_params():
             human_kynematic_model={human_kynematic_model}, \n\
             human_noisy_model={human_noisy_model}, \n\
             human_noisy_measure={human_noisy_measure}, \n\
-            human_model_variances={human_model_variances}, \n\
-            human_init_variances={human_init_variances}, \n\
-            robot_init_variances={robot_init_variances}, \n\
+            human_meas_variance={human_meas_variance}, \n\
+            human_model_variance={human_model_variance}, \n\
+            human_init_variance={human_init_variance}, \n\
+            robot_init_variance={robot_init_variance}, \n\
             human_n_dof={human_n_dof}, \n\
             human_n_kpts={human_n_kpts}, \n\
             human_Kp={human_Kp}, \n\
@@ -148,9 +171,10 @@ def main():
         human_kynematic_model=human_kynematic_model,
         human_noisy_model=human_noisy_model,
         human_noisy_measure=human_noisy_measure,
-        human_W=human_model_variances,
-        human_n_dof=human_n_dof,
+        human_R=human_meas_variance,
+        human_W=human_model_variance,
         human_n_kpts=human_n_kpts,
+        human_n_dof=human_n_dof,
         human_Kp=human_Kp,
         human_Kd=human_Kd,
         human_K_repulse=human_K_repulse,
@@ -169,14 +193,14 @@ def main():
         world_frame=world_frame
     )
 
-    rospy.loginfo("CREATED 'PREDICTOR' OBJECT:" + 
-                  "\n======================================================================" +
-                  f"\n{predictor}" +
-                  "\n======================================================================\n")
+    # rospy.loginfo("CREATED 'PREDICTOR' OBJECT:" + 
+    #               "\n======================================================================" +
+    #               f"\n{predictor}" +
+    #               "\n======================================================================\n")
 
     # Initialize the kalman_predictor
-    predictor.kalman_predictor.initialize(P0_human=human_init_variances,
-                                          P0_robot=robot_init_variances)
+    predictor.kalman_predictor.initialize(P0_human=human_init_variance,
+                                          P0_robot=robot_init_variance)
 
     # Set the rate of the node
     rate = rospy.Rate(hz)
@@ -187,8 +211,8 @@ def main():
         predictor.kalman_predictor.predict()
 
         # DEBUG: Print the current human and robot measured states
-        rospy.loginfo(f"Current human measurement: Size: {predictor.human_meas.shape}\nValue: {predictor.human_meas}\n"
-                      f"Current robot measurement: Size: {predictor.robot_meas.shape}\nValue: {predictor.robot_meas}\n")
+        # rospy.loginfo(f"Current human measurement: Size: {predictor.human_meas.shape}\nValue: {predictor.human_meas}\n"
+        #               f"Current robot measurement: Size: {predictor.robot_meas.shape}\nValue: {predictor.robot_meas}\n")
 
         # Check if human measurements are available. If not, skip model and kalman filter update
         if (np.isnan(predictor.human_meas)).all():
@@ -199,9 +223,6 @@ def main():
         current_meas = np.concatenate((predictor.human_meas, predictor.robot_meas))
         rospy.loginfo(f"Current measurement: {current_meas}")
         predictor.kalman_predictor.update(current_meas)
-
-        # PREDICT human_robot_system NEXT state using kalman_predictor
-        predictor.kalman_predictor.predict()
 
         # k-step ahead prediction of human_robot_system state
         pred_state, pred_cov = predictor.kalman_predictor.k_step_predict(num_steps)
