@@ -133,42 +133,42 @@ def read_params():
         hz =                                 rospy.get_param(node_name + '/hz', hz)
         num_steps =                          rospy.get_param(node_name + '/num_steps', num_steps)
 
-        rospy.loginfo(f"Loaded parameters: \n\
-            node_name={node_name}, \n\
-            dt={dt}, \n\
-            human_control_law={human_control_law}, \n\
-            human_kynematic_model={human_kynematic_model}, \n\
-            human_noisy_model={human_noisy_model}, \n\
-            human_noisy_measure={human_noisy_measure}, \n\
-            human_meas_variance={human_meas_variance}, \n\
-            human_model_variance={human_model_variance}, \n\
-            human_init_variance={human_init_variance}, \n\
-            robot_init_variance={robot_init_variance}, \n\
-            human_n_dof={human_n_dof}, \n\
-            human_n_kpts={human_n_kpts}, \n\
-            human_Kp={human_Kp}, \n\
-            human_Kd={human_Kd}, \n\
-            human_K_repulse={human_K_repulse}, \n\
-            robot_control_law={robot_control_law}, \n\
-            robot_n_dof={robot_n_dof}, \n\
-            alpha={alpha}, \n\
-            beta={beta}, \n\
-            kappa={kappa}, \n\
-            skeleton_topic={skeleton_topic}, \n\
-            robot_js_topic={robot_js_topic}, \n\
-            predicted_hri_state_topic={predicted_hri_state_topic}, \n\
-            predicted_hri_cov_topic={predicted_hri_cov_topic}, \n\
-            human_state_topic={human_state_topic}, \n\
-            camera_frame={camera_frame}, \n\
-            world_frame={world_frame}, \n\
-            hz={hz}, \n\
-            num_steps={num_steps}"
-        )
-
     except KeyError:
         rospy.logerr(f"Some parameters are not set. Exiting.")
         rospy.signal_shutdown("Parameters not set.")
         sys.exit(1)  # exit the program
+
+    rospy.loginfo(f"Loaded parameters: \n\
+    node_name={node_name}, \n\
+    dt={dt}, \n\
+    human_control_law={human_control_law}, \n\
+    human_kynematic_model={human_kynematic_model}, \n\
+    human_noisy_model={human_noisy_model}, \n\
+    human_noisy_measure={human_noisy_measure}, \n\
+    human_meas_variance={human_meas_variance}, \n\
+    human_model_variance={human_model_variance}, \n\
+    human_init_variance={human_init_variance}, \n\
+    robot_init_variance={robot_init_variance}, \n\
+    human_n_dof={human_n_dof}, \n\
+    human_n_kpts={human_n_kpts}, \n\
+    human_Kp={human_Kp}, \n\
+    human_Kd={human_Kd}, \n\
+    human_K_repulse={human_K_repulse}, \n\
+    robot_control_law={robot_control_law}, \n\
+    robot_n_dof={robot_n_dof}, \n\
+    alpha={alpha}, \n\
+    beta={beta}, \n\
+    kappa={kappa}, \n\
+    skeleton_topic={skeleton_topic}, \n\
+    robot_js_topic={robot_js_topic}, \n\
+    predicted_hri_state_topic={predicted_hri_state_topic}, \n\
+    predicted_hri_cov_topic={predicted_hri_cov_topic}, \n\
+    human_state_topic={human_state_topic}, \n\
+    camera_frame={camera_frame}, \n\
+    world_frame={world_frame}, \n\
+    hz={hz}, \n\
+    num_steps={num_steps}"
+    )
 
 
 def shutdown_hook():
@@ -209,11 +209,6 @@ def main():
         world_frame=world_frame
     )
 
-    # rospy.loginfo("CREATED 'PREDICTOR' OBJECT:" + 
-    #               "\n======================================================================" +
-    #               f"\n{predictor}" +
-    #               "\n======================================================================\n")
-
     # Initialize the kalman_predictor
     predictor.kalman_predictor.initialize(P0_human=human_init_variance,
                                           P0_robot=robot_init_variance)
@@ -225,53 +220,10 @@ def main():
     i = 0
     plt.figure()
     while not rospy.is_shutdown():
-        # Write the state covariance matrix to a new file 'P_i.csv'
-        with open(os.path.join(logs_dir, f'P_{i}.csv'), 'wb') as f:
-            np.savetxt(f, predictor.kalman_predictor.kalman_filter.P, delimiter=",")
-            rospy.loginfo(f"Saved state covariance matrix to 'P_{i}.csv'")
-
-        # Plot the covariance matrix P as a heatmap
-        plt.imshow(predictor.kalman_predictor.kalman_filter.P, cmap='viridis', interpolation='nearest')
-        plt.colorbar()
-        plt.title('Covariance Matrix P at iteration ' + str(i))
-        plt.xlabel('State Dimension')
-        plt.ylabel('State Dimension')
-        plt.show(block=False)
-        plt.pause(0.01)
-        plt.clf()
-
+        #rospy.logwarn(f"[iter: {i}] Kalman Filter state:\n{predictor.kalman_predictor.kalman_filter.x}")
+        #rospy.logwarn(f"[iter: {i}] Kalman Filter covariance:\n{predictor.kalman_predictor.kalman_filter.P}")
+        predictor.predict_update_step(i, logs_dir, num_steps)
         i += 1
-
-        # PREDICT human_robot_system NEXT state using kalman_predictor
-        predictor.kalman_predictor.predict()
-
-        # DEBUG: Print the current human and robot measured states
-        # rospy.loginfo(f"Current human measurement: Size: {predictor.human_meas.shape}\nValue: {predictor.human_meas}\n"
-        #               f"Current robot measurement: Size: {predictor.robot_meas.shape}\nValue: {predictor.robot_meas}\n")
-
-        # Check if human measurements are available. If not, skip model and kalman filter update
-        if (np.isnan(predictor.human_meas)).all():
-            rospy.logwarn("Human measurements are not available. Skipping prediction update.")
-            continue
-
-        # UPDATE human_robot_system CURRENT measurement using kalman_predictor
-        current_meas = np.concatenate((predictor.human_meas, predictor.robot_meas))
-        rospy.loginfo(f"Current measurement: {current_meas}")
-        predictor.kalman_predictor.update(current_meas)
-
-        continue
-
-        # k-step ahead prediction of human_robot_system state
-        pred_state, pred_cov = predictor.kalman_predictor.k_step_predict(num_steps)
-
-        # DUBUG: Print the predicted state and covariance
-        rospy.loginfo(f"Predicted State: {pred_state}\n")
-        rospy.loginfo(f"Predicted Covariance: {pred_cov}\n\n")
-
-        # Publish the sequence of predicted states along with their covariances
-        predictor.publish_predicted_state(pred_state)
-        predictor.publish_predicted_cov(pred_cov)
-
 
     rospy.spin()
     rate.sleep()

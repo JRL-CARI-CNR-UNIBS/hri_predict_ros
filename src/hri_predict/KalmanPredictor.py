@@ -116,6 +116,23 @@ class KalmanPredictor:
 
 
     def predict(self):
+        # if np.any(np.isnan(self.kalman_filter.P)):
+        #     print("[UKF::predict] P contains NaNs")
+        #     self.kalman_filter.P = np.eye(self.kalman_filter._dim_x) * 1e2
+
+        # # Check for semi-positive definitness of P matrix
+        # while not np.all(np.linalg.eigvals(self.kalman_filter.P) > 0):
+        #     print("[UKF::predict] P is not semi-positive definite, adding jitter")
+        #     self.kalman_filter.P += np.eye(self.kalman_filter._dim_x) * 1e-12
+
+        # # Check for symmetry of P
+        # while not np.allclose(self.kalman_filter.P, self.kalman_filter.P.T):
+        #     print("[UKF::predict] P is not symmetric, force symmetry")
+        #     self.kalman_filter.P = (self.kalman_filter.P + self.kalman_filter.P.T) / 2
+
+        # average_magnitude = np.mean(np.abs(self.kalman_filter.P))
+        # print("[UKF::predict] Average_magnitude of P elements: ", average_magnitude)
+
         self.kalman_filter.predict()
         self.model.set_state(self.kalman_filter.x[:self.model.human_model.n_states],
                              self.kalman_filter.x[self.model.human_model.n_states:])

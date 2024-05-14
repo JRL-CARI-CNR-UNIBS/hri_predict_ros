@@ -1,5 +1,7 @@
 from dataclasses import dataclass, field
 import numpy as np
+import matplotlib.pyplot as plt
+import os
 
 import hri_predict.HumanModel as HM
 import hri_predict.RobotModel as RM
@@ -226,3 +228,60 @@ class Predictor:
         self.covariance_pub.publish(covariance_msg)
 
     
+    def predict_update_step(self, iter, logs_dir, num_steps) -> None:
+        # Write the state covariance matrix to a new file 'P_i.csv'
+        # self.write_cov_matrix(logs_dir, iter)
+
+        # Plot the covariance matrix P as a heatmap
+        self.plot_cov_matrix(iter)
+
+        # PREDICT human_robot_system NEXT state using kalman_predictor
+        # rospy.loginfo(f"A[{iter}] self.kalman_predictor.kalman_filter.P: {self.kalman_predictor.kalman_filter.P}")
+        self.kalman_predictor.predict()
+        # rospy.loginfo(f"B[{iter}] self.kalman_predictor.kalman_filter.P: {self.kalman_predictor.kalman_filter.P}")
+
+        # DEBUG: Print the current human and robot measured states
+        # rospy.loginfo(f"Current human measurement: Size: {self.human_meas.shape}\nValue: {self.human_meas}\n"
+        #               f"Current robot measurement: Size: {self.robot_meas.shape}\nValue: {self.robot_meas}\n")
+
+        # Check if human measurements are available. If not, skip model and kalman filter update
+        if (np.isnan(self.human_meas)).all():
+            rospy.logwarn("Human measurements are not available. Skipping prediction update.")
+            return
+
+        # UPDATE human_robot_system CURRENT measurement using kalman_predictor
+        current_meas = np.concatenate((self.human_meas, self.robot_meas))
+        current_meas[current_meas==np.nan] = 0.0
+        rospy.loginfo(f"Current measurement: {current_meas}")
+        rospy.loginfo(f"\n\n\n\nprima {iter}: {self.kalman_predictor.kalman_filter}\n\n\n\n")
+        self.kalman_predictor.update(current_meas)
+        rospy.loginfo(f"\n\n\n\ndopo  {iter}: {self.kalman_predictor.kalman_filter}\n\n\n\n")
+        # rospy.loginfo(f"C[{iter}] self.kalman_predictor.kalman_filter.P: {self.kalman_predictor.kalman_filter.P}")
+
+        # # k-step ahead prediction of human_robot_system state
+        # pred_state, pred_cov = self.kalman_predictor.k_step_predict(num_steps)
+
+        # # DUBUG: Print the predicted state and covariance
+        # rospy.loginfo(f"Predicted State: {pred_state}\n")
+        # rospy.loginfo(f"Predicted Covariance: {pred_cov}\n\n")
+
+        # # Publish the sequence of predicted states along with their covariances
+        # self.publish_state(pred_state)
+        # self.publish_covariance(pred_cov)
+
+
+    def write_cov_matrix(self, logs_dir, iter):
+        with open(os.path.join(logs_dir, f'P_{iter}.csv'), 'wb') as f:
+            np.savetxt(f, self.kalman_predictor.kalman_filter.P, delimiter=",")
+            rospy.loginfo(f"Saved state covariance matrix to 'P_{iter}.csv'")
+
+
+    def plot_cov_matrix(self, iter):
+        plt.imshow(self.kalman_predictor.kalman_filter.P, cmap='viridis', interpolation='nearest')
+        plt.colorbar()
+        plt.title('Covariance Matrix P at iteration ' + str(iter))
+        plt.xlabel('State Dimension')
+        plt.ylabel('State Dimension')
+        plt.show(block=False)
+        plt.pause(0.01)
+        plt.clf()
