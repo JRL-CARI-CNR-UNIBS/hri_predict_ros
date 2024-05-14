@@ -162,6 +162,9 @@ class KalmanPredictor:
                                        self.kalman_filter.x_mean,
                                        self.kalman_filter.residual_x)
 
+            # check for semi-positive definitness of P matrix and correct if needed
+            P = get_near_psd(P)
+
             # update sigma points to reflect the new variance of the points
             sigmas_f = self.kalman_filter.points_fn.sigma_points(x, P)
 

@@ -11,7 +11,7 @@ import rospy
 import tf
 from zed_msgs.msg import ObjectsStamped
 from sensor_msgs.msg import JointState
-from geometry_msgs.msg import Vector3, Vector3Stamped, PointStamped
+from geometry_msgs.msg import PointStamped, PoseArray, Pose
 from std_msgs.msg import Float64MultiArray
 
 
@@ -26,7 +26,7 @@ class Predictor:
     robot_state_sub:        rospy.Subscriber = field(init=True, repr=False)
     pred_state_pub:         rospy.Publisher = field(init=True, repr=False)
     covariance_pub:         rospy.Publisher = field(init=True, repr=False)
-    human_state_pub:        rospy.Publisher = field(init=True, repr=False)
+    human_meas_pub:        rospy.Publisher = field(init=True, repr=False)
     tf_listener:            tf.TransformListener = field(init=False, repr=False)
     camera_frame:           str = field(default="", init=True, repr=True)
     world_frame:            str = field(default="world", init=True, repr=True)
@@ -103,7 +103,7 @@ class Predictor:
         self.robot_state_sub    = rospy.Subscriber(robot_js_topic, JointState, self.read_robot_js_cb)
         self.pred_state_pub     = rospy.Publisher(node_name + predicted_hri_state_topic, Float64MultiArray, queue_size=10)
         self.covariance_pub     = rospy.Publisher(node_name + predicted_hri_cov_topic, Float64MultiArray, queue_size=10)
-        self.human_state_pub    = rospy.Publisher(node_name + human_state_topic, Vector3Stamped, queue_size=10)
+        self.human_meas_pub    = rospy.Publisher(node_name + human_state_topic, PoseArray, queue_size=10)
 
         # Initialize camera and world frames
         self.camera_frame = camera_frame
@@ -148,25 +148,34 @@ class Predictor:
             # rospy.logwarn("No skeleton keypoints received.")
             self.skeleton_kpts = np.full(self.skeleton_kpts.shape, np.nan)
 
-        # Update current human state
+        # Update current human measurement vector
         self.human_meas = self.skeleton_kpts.flatten()
 
         # DEBUG: Print the detected skeleton keypoints
         # rospy.loginfo(f"Received skeleton keypoints:\n{self.skeleton_kpts}, shape: {self.skeleton_kpts.shape}")
         # rospy.loginfo(f"Received human state:\n{self.human_meas}, shape: {self.human_meas.shape}")
 
-        # Publish current human state
-        human_state_msg = Vector3Stamped()
-        human_state_msg.header.stamp = rospy.Time.now()
-        human_state_msg.header.frame_id = self.world_frame
-        human_state_msg.vector = Vector3()
+        # Publish current human measurement vector
+        # Initialize PoseArray message
+        human_meas_msg = PoseArray()
 
-        for i in range(self.n_kpts): # [pos_x, pos_y, pos_z] for each keypoint
-            human_state_msg.vector.x = self.skeleton_kpts[i][0]
-            human_state_msg.vector.y = self.skeleton_kpts[i][1]
-            human_state_msg.vector.z = self.skeleton_kpts[i][2]
+        # Set the header
+        human_meas_msg.header.stamp = rospy.Time.now()
+        human_meas_msg.header.frame_id = self.world_frame
+        human_meas_msg.poses = []
 
-        self.human_state_pub.publish(human_state_msg)
+        # Add the positions of all keypoints
+        for i in range(self.n_kpts):
+            pose = Pose()
+            pose.position.x = self.skeleton_kpts[i][0]
+            pose.position.y = self.skeleton_kpts[i][1]
+            pose.position.z = self.skeleton_kpts[i][2]
+            pose.orientation.w = 1.0 # dummy value (orientation.x, y, z are 0.0 by default)
+
+            human_meas_msg.poses.append(pose)
+
+        # Publish the message
+        self.human_meas_pub.publish(human_meas_msg)
 
 
     def read_robot_js_cb(self, msg: JointState) -> None:
@@ -200,6 +209,19 @@ class Predictor:
         # PREDICT human_robot_system NEXT state using kalman_predictor
         self.kalman_predictor.predict()
 
+        ######################################################################### TODO: K-STEP PREDICT IS VERY SLOW
+        # # k-step ahead prediction of human_robot_system state
+        # pred_state, pred_cov = self.kalman_predictor.k_step_predict(num_steps)
+
+        # # DUBUG: Print the predicted state and covariance
+        # # rospy.loginfo(f"Predicted State: {pred_state}\n")
+        # # rospy.loginfo(f"Predicted Covariance: {pred_cov}\n\n")
+
+        ######################################################################### TODO: FIX THE PUBLISHING OF PREDICTED STATE AND COVARIANCE OR CHANGE WITH SAVING TO FILE
+        # # Publish the sequence of predicted states along with their covariances
+        # self.publish_state(pred_state)
+        # self.publish_covariance(pred_cov)
+
         # Check if human measurements are available. If not, skip model and kalman filter update
         if (np.isnan(self.human_meas)).all():
             rospy.logwarn("Human measurements are not available. Skipping update step.")
@@ -224,17 +246,6 @@ class Predictor:
 
         # UPDATE human_robot_system CURRENT measurement using kalman_predictor
         self.kalman_predictor.update(current_meas)
-
-        # # k-step ahead prediction of human_robot_system state
-        # pred_state, pred_cov = self.kalman_predictor.k_step_predict(num_steps)
-
-        # # DUBUG: Print the predicted state and covariance
-        # rospy.loginfo(f"Predicted State: {pred_state}\n")
-        # rospy.loginfo(f"Predicted Covariance: {pred_cov}\n\n")
-
-        # # Publish the sequence of predicted states along with their covariances
-        # self.publish_state(pred_state)
-        # self.publish_covariance(pred_cov)
 
 
     def write_cov_matrix(self, logs_dir, iter):

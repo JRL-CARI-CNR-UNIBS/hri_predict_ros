@@ -46,7 +46,7 @@ skeleton_topic = "/zed/zed_node/body_trk/skeletons"
 robot_js_topic = "/robot/joint_states"
 predicted_hri_state_topic = "/predicted_hri_state"
 predicted_hri_cov_topic = "/predicted_hri_cov"
-human_state_topic = "/human_state"
+human_state_topic = "/human_measurement"
 camera_frame = "zed_camera_link"  # if sl::REFERENCE_FRAME::WORLD for the ZED camera is selected
 world_frame = "world"
 hz = 100
@@ -227,8 +227,9 @@ def main():
         
         i += 1
 
+        rate.sleep()
+
     rospy.spin()
-    rate.sleep()
     rospy.on_shutdown(shutdown_hook)
 
 
