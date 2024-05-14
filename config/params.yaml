@@ -5,28 +5,22 @@ human_n_dof: 3    # Number of degrees of freedom (i.e., number of joints if huma
 human_n_kpts: 18  # Number of keypoints (equal to human_n_dof if human_kynematic_model is KEYPOINTS)
 human_noisy_model: False
 human_noisy_measure: True
-human_meas_variance: # Measurement noise for each human keypoint (Hip: all keypoints have the same variance)
-  x:
-    pos: 0.1
-    vel: 1.0
-  y:
-    pos: 0.1
-    vel: 1.0
-  z:
-    pos: 0.1
-    vel: 1.0
+human_meas_variance: # Measurement noise on the position of each human keypoint (Hip: all keypoints have the same variance)
+  x: 0.1
+  y: 0.1
+  z: 0.1
 human_model_variance: # Model uncertainty for each human DoF
-    pos: 0.1
-    vel: 1.0
-    acc: 10.0
+  pos: 0.1
+  vel: 1.0
+  acc: 10.0
 human_init_variance: # [pos, vel, acc] for each human DoF
-    pos: 10.0
-    vel: 100.0
-    acc: 1000.0
+  pos: 10.0
+  vel: 100.0
+  acc: 1000.0
 robot_init_variance: # [pos, vel, acc] for each robot DoF
-    pos: 0.01
-    vel: 0.1
-    acc: 1.0
+  pos: 0.01
+  vel: 0.1
+  acc: 1.0
 human_Kp: 1.0
 human_Kd: 1.0
 human_K_repulse: 1.0

@@ -11,9 +11,8 @@ import rospy
 import tf
 from zed_msgs.msg import ObjectsStamped
 from sensor_msgs.msg import JointState
-from geometry_msgs.msg import Vector3, PointStamped
+from geometry_msgs.msg import Vector3, Vector3Stamped, PointStamped
 from std_msgs.msg import Float64MultiArray
-from hri_predict_ros.msg import KeypointState
 
 
 @dataclass
@@ -21,9 +20,6 @@ class Predictor:
     kalman_predictor:       KalmanPredictor = field(init=False, repr=True)
     n_kpts:                 int = field(default=0, init=False, repr=True)
     skeleton_kpts:          np.ndarray = field(default=np.array([]), init=False, repr=False)
-    skeleton_kpts_prev:     np.ndarray = field(default=np.array([]), init=False, repr=False)
-    skeleton_time:          float = field(default=0.0, init=False, repr=False)
-    skeleton_time_prev:     float = field(default=0.0, init=False, repr=False)
     human_meas:             np.ndarray = field(init=False, repr=False)
     robot_meas:             np.ndarray = field(init=False, repr=False)
     skeleton_sub:           rospy.Subscriber = field(init=True, repr=False)
@@ -95,10 +91,11 @@ class Predictor:
 
         # Initialize skeleton keypoints ([x, y, z] for each kpt)
         self.skeleton_kpts = np.zeros((self.n_kpts, 3), dtype=float)
-        self.skeleton_kpts_prev = np.zeros((self.n_kpts, 3), dtype=float)
 
-        # Initialize human and robot states ([position, velocity] for each DoF)
-        self.human_meas = np.full(2*human_n_dof, np.nan, dtype=float)
+        # Initialize human measurement vector ([x, y, z] position for each kpt)
+        self.human_meas = np.full(3*human_n_kpts, np.nan, dtype=float)
+        
+        # Initialize robot measurement vector ([pos, vel] for each DoF)
         self.robot_meas = np.full(2*robot_n_dof, np.nan, dtype=float)
 
         # Initialize ROS subscribers and publishers
@@ -106,7 +103,7 @@ class Predictor:
         self.robot_state_sub    = rospy.Subscriber(robot_js_topic, JointState, self.read_robot_js_cb)
         self.pred_state_pub     = rospy.Publisher(node_name + predicted_hri_state_topic, Float64MultiArray, queue_size=10)
         self.covariance_pub     = rospy.Publisher(node_name + predicted_hri_cov_topic, Float64MultiArray, queue_size=10)
-        self.human_state_pub    = rospy.Publisher(node_name + human_state_topic, KeypointState, queue_size=10)
+        self.human_state_pub    = rospy.Publisher(node_name + human_state_topic, Vector3Stamped, queue_size=10)
 
         # Initialize camera and world frames
         self.camera_frame = camera_frame
@@ -124,7 +121,6 @@ class Predictor:
                 kpts = kpts[:self.n_kpts] # select only the first n_kpts
 
                 self.skeleton_kpts = np.reshape(kpts, (self.n_kpts, 3)) # reshape to (n_kpts, 3)
-                self.skeleton_time = msg.header.stamp.to_sec()
 
                 # Convert keypoints to world frame
                 for i in range(self.n_kpts):
@@ -137,72 +133,38 @@ class Predictor:
                     kpt.point.z = self.skeleton_kpts[i][2]
 
                     # Transform the point to the world frame
-                    kpt_world = self.tf_listener.transformPoint(self.world_frame, kpt)
+                    try:
+                        kpt_world = self.tf_listener.transformPoint(self.world_frame, kpt)
+                    except tf.ExtrapolationException as e:
+                        rospy.logwarn(f"TF Exception: {e}")
+                        continue
 
                     # Update the keypoint position in the world frame
                     self.skeleton_kpts[i][0] = kpt_world.point.x
                     self.skeleton_kpts[i][1] = kpt_world.point.y
                     self.skeleton_kpts[i][2] = kpt_world.point.z
             
-            if self.kalman_predictor.model.human_model.kynematic_model == HM.KynematicModel.KEYPOINTS:
-                # Compute velocity for each keypoint
-                pos = self.skeleton_kpts
-                pos_prev = self.skeleton_kpts_prev
-                vel = (pos - pos_prev) / (self.skeleton_time - self.skeleton_time_prev)
-                
-                # Update current human state
-                self.human_meas = np.dstack((pos, vel)).ravel()
-                np.reshape(self.human_meas, (1, -1))
-
-            elif self.kalman_predictor.model.human_model.kynematic_model == HM.KynematicModel.KYN_CHAIN:
-                pass # TODO: implement
-            
-            else:
-                raise ValueError("Invalid kynematic model for the human agent.")
-        
         else:
-            rospy.logwarn("No skeleton keypoints received.")
+            # rospy.logwarn("No skeleton keypoints received.")
             self.skeleton_kpts = np.full(self.skeleton_kpts.shape, np.nan)
-            pos = np.full(self.skeleton_kpts.shape, np.nan)
-            vel = np.full(self.skeleton_kpts.shape, np.nan)
 
-            # Update current human state with nan values
-            if self.kalman_predictor.model.human_model.kynematic_model == HM.KynematicModel.KEYPOINTS:
-                self.human_meas = np.full(self.human_meas.shape, np.nan)
-
-            elif self.kalman_predictor.model.human_model.kynematic_model == HM.KynematicModel.KYN_CHAIN:
-                pass # TODO: implement
+        # Update current human state
+        self.human_meas = self.skeleton_kpts.flatten()
 
         # DEBUG: Print the detected skeleton keypoints
-        # rospy.loginfo(f"Received skeleton keypoints:\n{self.skeleton_kpts}\nat time: {self.skeleton_time}")
-
-        # Update previous state
-        self.skeleton_kpts_prev = self.skeleton_kpts
-        self.skeleton_time_prev = self.skeleton_time
-        
-        # rospy.loginfo(f"Received human state:\n{self.human_state}")
+        # rospy.loginfo(f"Received skeleton keypoints:\n{self.skeleton_kpts}, shape: {self.skeleton_kpts.shape}")
+        # rospy.loginfo(f"Received human state:\n{self.human_meas}, shape: {self.human_meas.shape}")
 
         # Publish current human state
-        human_state_msg = KeypointState()
+        human_state_msg = Vector3Stamped()
         human_state_msg.header.stamp = rospy.Time.now()
-        human_state_msg.position = []
-        human_state_msg.velocity = []
+        human_state_msg.header.frame_id = self.world_frame
+        human_state_msg.vector = Vector3()
 
-        for i in range(self.n_kpts): # [pos_x, vel_x, pos_y, vel_y, pos_z, vel_z] for each keypoint
-            # rospy.loginfo(f"Publishing keypoint #{i}\t: pos={pos[i]} \t|\t vel={vel[i]}")
-
-            # Create a Vector3 message for the keypoint
-            human_state_msg.name.append(f"kp_{i}")
-            kpt_pos = Vector3()
-            kpt_pos.x = pos[i][0]
-            kpt_pos.y = pos[i][1]
-            kpt_pos.z = pos[i][2]
-            human_state_msg.position.append(kpt_pos)
-            kpt_vel = Vector3()
-            kpt_vel.x = vel[i][0]
-            kpt_vel.y = vel[i][1]
-            kpt_vel.z = vel[i][2]
-            human_state_msg.velocity.append(kpt_vel)
+        for i in range(self.n_kpts): # [pos_x, pos_y, pos_z] for each keypoint
+            human_state_msg.vector.x = self.skeleton_kpts[i][0]
+            human_state_msg.vector.y = self.skeleton_kpts[i][1]
+            human_state_msg.vector.z = self.skeleton_kpts[i][2]
 
         self.human_state_pub.publish(human_state_msg)
 
@@ -236,27 +198,32 @@ class Predictor:
         self.plot_cov_matrix(iter)
 
         # PREDICT human_robot_system NEXT state using kalman_predictor
-        # rospy.loginfo(f"A[{iter}] self.kalman_predictor.kalman_filter.P: {self.kalman_predictor.kalman_filter.P}")
         self.kalman_predictor.predict()
-        # rospy.loginfo(f"B[{iter}] self.kalman_predictor.kalman_filter.P: {self.kalman_predictor.kalman_filter.P}")
-
-        # DEBUG: Print the current human and robot measured states
-        # rospy.loginfo(f"Current human measurement: Size: {self.human_meas.shape}\nValue: {self.human_meas}\n"
-        #               f"Current robot measurement: Size: {self.robot_meas.shape}\nValue: {self.robot_meas}\n")
 
         # Check if human measurements are available. If not, skip model and kalman filter update
         if (np.isnan(self.human_meas)).all():
-            rospy.logwarn("Human measurements are not available. Skipping prediction update.")
+            rospy.logwarn("Human measurements are not available. Skipping update step.")
+            return
+        
+        # Check if human measurements contain NaNs. If so, skip model and kalman filter update
+        if (np.isnan(self.human_meas)).any():
+            rospy.logwarn("Human measurements contain NaNs. Skipping update step.")
+            return
+        
+        current_meas = np.concatenate((self.human_meas, self.robot_meas))
+        # rospy.loginfo(f"Current measurement: {current_meas}")
+
+        # Check if the new measurement vector (current_meas) is different
+        # from the previous one (self.kalman_predictor.kalman_filter.z).
+        # To do so, only check if the non-nan values in both arrays are close
+        non_nan_mask = ~np.isnan(current_meas) & ~np.isnan(self.kalman_predictor.kalman_filter.z)
+        values_are_close = np.allclose(current_meas[non_nan_mask], self.kalman_predictor.kalman_filter.z[non_nan_mask])
+        if values_are_close:
+            rospy.logwarn("Human-Robot measurements have not changed. Skipping update step.")
             return
 
         # UPDATE human_robot_system CURRENT measurement using kalman_predictor
-        current_meas = np.concatenate((self.human_meas, self.robot_meas))
-        current_meas[current_meas==np.nan] = 0.0
-        rospy.loginfo(f"Current measurement: {current_meas}")
-        rospy.loginfo(f"\n\n\n\nprima {iter}: {self.kalman_predictor.kalman_filter}\n\n\n\n")
         self.kalman_predictor.update(current_meas)
-        rospy.loginfo(f"\n\n\n\ndopo  {iter}: {self.kalman_predictor.kalman_filter}\n\n\n\n")
-        # rospy.loginfo(f"C[{iter}] self.kalman_predictor.kalman_filter.P: {self.kalman_predictor.kalman_filter.P}")
 
         # # k-step ahead prediction of human_robot_system state
         # pred_state, pred_cov = self.kalman_predictor.k_step_predict(num_steps)

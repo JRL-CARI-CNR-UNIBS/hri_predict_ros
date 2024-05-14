@@ -6,6 +6,8 @@ from scipy.linalg import block_diag
 from .HumanRobotSystem import HumanRobotSystem
 from . import HumanModel as HM
 from . import RobotModel as RM
+from .utils import get_near_psd
+
 
 
 @dataclass
@@ -82,6 +84,9 @@ class KalmanPredictor:
             self.model.set_state(x0_human, x0_robot)
         self.kalman_filter.x = self.model.get_state()
 
+        # Initialize the MEASUREMENT VECTOR with nan values
+        self.kalman_filter.z = np.zeros(self.model.n_outs)
+
         # Initialize the STATE COVARIANCE matrix
         P0_val_human = [value for value in P0_human.values()] # [pos, vel, acc] for the single DoF
         P0_val_human = np.tile(P0_val_human, self.model.human_model.n_dof) # replicate for each DoF
@@ -116,22 +121,13 @@ class KalmanPredictor:
 
 
     def predict(self):
-        # if np.any(np.isnan(self.kalman_filter.P)):
-        #     print("[UKF::predict] P contains NaNs")
-        #     self.kalman_filter.P = np.eye(self.kalman_filter._dim_x) * 1e2
+        # Check for semi-positive definitness of P matrix and correct if needed
+        self.kalman_filter.P = get_near_psd(self.kalman_filter.P)
 
-        # # Check for semi-positive definitness of P matrix
-        # while not np.all(np.linalg.eigvals(self.kalman_filter.P) > 0):
-        #     print("[UKF::predict] P is not semi-positive definite, adding jitter")
-        #     self.kalman_filter.P += np.eye(self.kalman_filter._dim_x) * 1e-12
-
-        # # Check for symmetry of P
-        # while not np.allclose(self.kalman_filter.P, self.kalman_filter.P.T):
-        #     print("[UKF::predict] P is not symmetric, force symmetry")
-        #     self.kalman_filter.P = (self.kalman_filter.P + self.kalman_filter.P.T) / 2
-
-        # average_magnitude = np.mean(np.abs(self.kalman_filter.P))
-        # print("[UKF::predict] Average_magnitude of P elements: ", average_magnitude)
+        # Compute average magnitude of eigenvalues of P matrix
+        eigenvalues = np.linalg.eigvals(self.kalman_filter.P)
+        average_magnitude = np.mean(np.abs(eigenvalues))
+        print("[KalmanPredictor::predict] Average magnitude of the eigenvalues of P: ", average_magnitude)
 
         self.kalman_filter.predict()
         self.model.set_state(self.kalman_filter.x[:self.model.human_model.n_states],

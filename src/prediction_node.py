@@ -5,7 +5,6 @@ import rospy, rospkg
 import numpy as np
 from hri_predict_ros.Predictor import Predictor
 import matplotlib.pyplot as plt
-from scipy.linalg import block_diag
 
 
 # Create a RosPack object
@@ -93,10 +92,8 @@ def read_params():
 
         human_meas_variance = {} # [pos, vel] for each axis (x, y, z)
         for axis in ['x', 'y', 'z']:
-            human_meas_variance[axis] = {}
-            for var_type in ['pos', 'vel']:
-                param_name = f'/human_meas_variance/{axis}/{var_type}'
-                human_meas_variance[axis][var_type] = rospy.get_param(node_name + param_name)
+            param_name = f'/human_meas_variance/{axis}'
+            human_meas_variance[axis] = rospy.get_param(node_name + param_name)
 
         human_model_variance = {} # [pos, vel, acc] for each DoF
         for var_type in ['pos', 'vel', 'acc']:
@@ -220,9 +217,14 @@ def main():
     i = 0
     plt.figure()
     while not rospy.is_shutdown():
-        #rospy.logwarn(f"[iter: {i}] Kalman Filter state:\n{predictor.kalman_predictor.kalman_filter.x}")
-        #rospy.logwarn(f"[iter: {i}] Kalman Filter covariance:\n{predictor.kalman_predictor.kalman_filter.P}")
-        predictor.predict_update_step(i, logs_dir, num_steps)
+        try:
+            predictor.predict_update_step(i, logs_dir, num_steps)
+        except np.linalg.LinAlgError as e:
+            rospy.logerr(f"LinAlgError: {e}")
+            rospy.logerr("Resetting the Kalman Filter to the initial values.")
+            predictor.kalman_predictor.initialize(P0_human=human_init_variance,
+                                                  P0_robot=robot_init_variance)
+        
         i += 1
 
     rospy.spin()

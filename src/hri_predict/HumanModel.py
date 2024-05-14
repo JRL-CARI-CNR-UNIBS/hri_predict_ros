@@ -24,7 +24,7 @@ class HumanModel:
     noisy_measure:      bool = field(default=False, init=True, repr=True)
       
     n_kpts:     int = field(default=18, init=True, repr=True)     # number of keypoints
-    n_dof:      int = field(default=54, init=True, repr=True)     # n_dof = 3*n_keypoints if KEYPOINTS, n_joints if KYN_CHAIN
+    n_dof:      int = field(default=54, init=True, repr=True)     # n_dof = 3*n_kpts if KEYPOINTS, n_joints if KYN_CHAIN
     n_states:   int = field(init=False, repr=True)                # total number of state variables
     n_outs:     int = field(init=False, repr=True)                # number of output variables
   
@@ -64,9 +64,13 @@ class HumanModel:
         # Override n_dof for "KEYPOINTS" kinematic model: n_DoF = (x, y, z) for each keypoint
         if self.kynematic_model == KynematicModel.KEYPOINTS:
             self.n_dof = 3 * n_kpts
+        elif self.kynematic_model == KynematicModel.KYN_CHAIN:
+            self.n_dof = n_dof
+        else:
+            raise ValueError('Invalid kynematic model')
         
         self.n_states = 3 * self.n_dof # (position, velocity, acceleration) for each DoF
-        self.n_outs = 2 * self.n_dof # (position, velocity) for each DoF
+        self.n_outs = self.n_dof       # x, y, z, position for each keypoint
 
         self.x = np.zeros(self.n_states)
 
@@ -90,7 +94,7 @@ class HumanModel:
         self.W = block_diag(*[W_block for _ in range(self.n_dof)]) # replicate the block for each DoF
 
         # Measurement noise matrix
-        R_values = [value for sublist in R.values() for value in sublist.values()] # [pos_x, vel_x, pos_y, vel_y, pos_z, vel_z] for the single keypoint
+        R_values = [v for v in R.values()] # [pos_x, pos_y, pos_z] for the single keypoint
         if self.noisy_measure:
             R_block = np.diag(R_values)
         else:
@@ -170,7 +174,7 @@ class HumanModel:
 
     def output(self) -> np.ndarray:
         if self.kynematic_model == KynematicModel.KEYPOINTS:
-            return self.x[self.pv_idx]
+            return self.x[self.p_idx]
         elif self.kynematic_model == KynematicModel.KYN_CHAIN:
             return self.fwd_kin()
         else:
@@ -179,8 +183,7 @@ class HumanModel:
 
     def h(self, x: np.ndarray) -> np.ndarray:
         if self.kynematic_model == KynematicModel.KEYPOINTS:
-            block = np.array([[1, 0, 0],
-                              [0, 1, 0]], dtype=float)
+            block = np.array([[1, 0, 0]], dtype=float)
             H = block_diag(*[block for _ in range(self.n_dof)])
             return H @ x
         elif self.kynematic_model == KynematicModel.KYN_CHAIN:

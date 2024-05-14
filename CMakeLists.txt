@@ -7,7 +7,7 @@ find_package(catkin REQUIRED COMPONENTS
   zed_msgs
   sensor_msgs
   geometry_msgs
-  message_generation
+  # message_generation
 )
 
 # Install modules and global scripts declared therein
@@ -15,17 +15,16 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_python_setup()
 
 # Generate messages in the 'msg' folder
-add_message_files(
-  FILES
-  KeypointState.msg
-)
+# add_message_files(
+#   FILES
+#   message.msg
+# )
 
 # Generate added messages and services with any dependencies listed here
-generate_messages(
-  DEPENDENCIES
-  std_msgs
-  geometry_msgs
-)
+# generate_messages(
+  # DEPENDENCIES
+  # std_msgs
+# )
 
 ###################################
 ## catkin specific configuration ##
