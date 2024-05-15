@@ -22,6 +22,9 @@ class KalmanPredictor:
     beta:           float = field(default=2.0, init=True, repr=True)
     kappa:          float = field(default=0.1, init=True, repr=True)
 
+    p_idx:          np.ndarray = field(default=np.array([]), init=False, repr=False)
+    v_idx:          np.ndarray = field(default=np.array([]), init=False, repr=False)
+
 
     def __init__(self,
                  dt: float=0.01,
@@ -74,6 +77,11 @@ class KalmanPredictor:
                                                    hx=self.model.h,
                                                    dt=dt,
                                                    points=self.sigma_points)
+        
+        # Set the indices for position, velocity and acceleration for the human model
+        self.p_idx = np.arange(0, self.model.human_model.n_states, 3)
+        self.v_idx = np.arange(1, self.model.human_model.n_states, 3)
+        self.a_idx = np.arange(2, self.model.human_model.n_states, 3)
 
 
     def initialize(self, P0_human: dict, P0_robot: dict,
@@ -142,17 +150,16 @@ class KalmanPredictor:
 
     def k_step_predict(self, k: int) -> tuple:
         # calculate sigma points for current mean and covariance
-        jitter = np.eye(self.kalman_filter.P.shape[0]) * 1e-6
         sigmas = self.kalman_filter.points_fn.sigma_points(self.kalman_filter.x,
-                                                           self.kalman_filter.P + jitter)
+                                                           self.kalman_filter.P)
         
         sigmas_f = np.zeros((len(sigmas), self.kalman_filter._dim_x))               # sigma points after passing through dynamics function
         xx = np.zeros((k, self.kalman_filter._dim_x))                               # mean after passing through dynamics function
-        PP = np.zeros((k, self.kalman_filter._dim_x, self.kalman_filter._dim_x))    # covariance after passing through dynamics function
+        variances = np.zeros((k, self.kalman_filter._dim_x))                        # covariance after passing through dynamics function      
+
         for _ in range(k):
             # transform sigma points through the dynamics function
-            for i, s in enumerate(sigmas):
-                sigmas_f[i] = self.kalman_filter.fx(s, self.kalman_filter._dt)
+            sigmas_f = np.array([self.kalman_filter.fx(s, self.kalman_filter._dt) for s in sigmas])
 
             # pass sigmas through the unscented transform to compute prior
             x, P = unscented_transform(sigmas_f,
@@ -166,12 +173,12 @@ class KalmanPredictor:
             P = get_near_psd(P)
 
             # update sigma points to reflect the new variance of the points
-            sigmas_f = self.kalman_filter.points_fn.sigma_points(x, P)
+            sigmas = self.kalman_filter.points_fn.sigma_points(x, P)
 
-            # store x (mean) and P (covariance) for each step
+            # store state means and variances for each step
             xx[_] = x
-            PP[_] = P
+            variances[_] = np.diag(P)
         
-        return xx, PP
+        return xx, variances
         
     

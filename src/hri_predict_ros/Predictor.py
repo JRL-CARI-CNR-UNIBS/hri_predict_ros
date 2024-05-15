@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+import threading
 
 import hri_predict.HumanModel as HM
 import hri_predict.RobotModel as RM
@@ -12,7 +13,7 @@ import tf
 from zed_msgs.msg import ObjectsStamped
 from sensor_msgs.msg import JointState
 from geometry_msgs.msg import PointStamped, PoseArray, Pose
-from std_msgs.msg import Float64MultiArray
+from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
 
 @dataclass
@@ -25,8 +26,8 @@ class Predictor:
     skeleton_sub:           rospy.Subscriber = field(init=True, repr=False)
     robot_state_sub:        rospy.Subscriber = field(init=True, repr=False)
     pred_state_pub:         rospy.Publisher = field(init=True, repr=False)
-    covariance_pub:         rospy.Publisher = field(init=True, repr=False)
-    human_meas_pub:        rospy.Publisher = field(init=True, repr=False)
+    pred_variance_pub:      rospy.Publisher = field(init=True, repr=False)
+    human_meas_pub:         rospy.Publisher = field(init=True, repr=False)
     tf_listener:            tf.TransformListener = field(init=False, repr=False)
     camera_frame:           str = field(default="", init=True, repr=True)
     world_frame:            str = field(default="world", init=True, repr=True)
@@ -55,7 +56,9 @@ class Predictor:
                  robot_js_topic: str="",
                  predicted_hri_state_topic: str="",
                  predicted_hri_cov_topic: str="",
-                 human_state_topic: str="",
+                 human_meas_topic: str="",
+                 human_filt_pos_topic: str="",   
+                 human_filt_vel_topic: str="",   
                  camera_frame: str="",
                  world_frame: str="world") -> None:
         
@@ -101,9 +104,11 @@ class Predictor:
         # Initialize ROS subscribers and publishers
         self.skeleton_sub       = rospy.Subscriber(skeleton_topic, ObjectsStamped, self.read_skeleton_cb)
         self.robot_state_sub    = rospy.Subscriber(robot_js_topic, JointState, self.read_robot_js_cb)
-        self.pred_state_pub     = rospy.Publisher(node_name + predicted_hri_state_topic, Float64MultiArray, queue_size=10)
-        self.covariance_pub     = rospy.Publisher(node_name + predicted_hri_cov_topic, Float64MultiArray, queue_size=10)
-        self.human_meas_pub    = rospy.Publisher(node_name + human_state_topic, PoseArray, queue_size=10)
+        self.pred_state_pub     = rospy.Publisher(node_name + predicted_hri_state_topic, JointTrajectory, queue_size=10)   # k-step ahead predicted state
+        self.pred_variance_pub  = rospy.Publisher(node_name + predicted_hri_cov_topic, JointTrajectory, queue_size=10)     # k-step ahead predicted variance
+        self.human_meas_pub     = rospy.Publisher(node_name + human_meas_topic, PoseArray, queue_size=10)                  # current human measured position
+        self.human_filt_pos_pub = rospy.Publisher(node_name + human_filt_pos_topic, PoseArray, queue_size=10)              # current human estimated position
+        self.human_filt_vel_pub = rospy.Publisher(node_name + human_filt_vel_topic, PoseArray, queue_size=10)              # current human estimated velocity
 
         # Initialize camera and world frames
         self.camera_frame = camera_frame
@@ -145,15 +150,10 @@ class Predictor:
                     self.skeleton_kpts[i][2] = kpt_world.point.z
             
         else:
-            # rospy.logwarn("No skeleton keypoints received.")
             self.skeleton_kpts = np.full(self.skeleton_kpts.shape, np.nan)
 
         # Update current human measurement vector
         self.human_meas = self.skeleton_kpts.flatten()
-
-        # DEBUG: Print the detected skeleton keypoints
-        # rospy.loginfo(f"Received skeleton keypoints:\n{self.skeleton_kpts}, shape: {self.skeleton_kpts.shape}")
-        # rospy.loginfo(f"Received human state:\n{self.human_meas}, shape: {self.human_meas.shape}")
 
         # Publish current human measurement vector
         # Initialize PoseArray message
@@ -183,44 +183,120 @@ class Predictor:
         vel = msg.velocity
         self.robot_meas = np.dstack((pos, vel)).ravel()
         np.reshape(self.robot_meas, (1, -1))
-        # rospy.loginfo(f"Received robot state: {self.robot_state}")
 
 
-    def publish_state(self, state):
-        state_msg = Float64MultiArray()
-        # Each row corresponds to an element and each column corresponds to a future value
-        state_msg.data = state.flatten('F').tolist() # flatten the 2D array into a 1D array in column-major (Fortran-style) order, which means it concatenates the columns together
-        self.pred_state_pub.publish(state_msg)
-        
+    def publish_future_traj(self, state: np.ndarray, pub: rospy.Publisher, n_points: int=1) -> None:
+        state_msg = JointTrajectory()
+        state_msg.header.stamp = rospy.Time.now()
+        state_msg.header.frame_id = self.world_frame
 
-    def publish_covariance(self, covariance):
-        covariance_msg = Float64MultiArray()
-        covariance_msg.data = covariance.flatten().tolist()
-        self.covariance_pub.publish(covariance_msg)
+        state_msg.joint_names = []
+        if self.kalman_predictor.model.human_model.kynematic_model == HM.KynematicModel.KEYPOINTS:
+            for i in range(self.kalman_predictor.model.human_model.n_kpts):
+                state_msg.joint_names.append(f'kpt_{i}_x')
+                state_msg.joint_names.append(f'kpt_{i}_y')
+                state_msg.joint_names.append(f'kpt_{i}_z')
+        elif self.kalman_predictor.model.human_model.kynematic_model == HM.KynematicModel.KYN_CHAIN:
+            for i in range(self.kalman_predictor.model.human_model.n_dof):
+                state_msg.joint_names.append(f'human_joint_{i}')
+        else:
+            raise ValueError('Invalid kynematic model')
+
+        state_msg.points = []
+        for i in range(n_points):
+            point = JointTrajectoryPoint()
+
+            pos = state[i][self.kalman_predictor.p_idx]
+            vel = state[i][self.kalman_predictor.v_idx]
+            acc = state[i][self.kalman_predictor.a_idx]
+
+            point.positions = pos.tolist()
+            point.velocities = vel.tolist()
+            point.accelerations = acc.tolist()
+            point.time_from_start = rospy.Duration.from_sec(i*self.kalman_predictor.dt)
+
+            state_msg.points.append(point)
+
+        pub.publish(state_msg)
+
+
+    def publish_human_filt_pos(self):
+        # Initialize PoseArray message
+        human_filt_pos_msg = PoseArray()
+
+        # Set the header
+        human_filt_pos_msg.header.stamp = rospy.Time.now()
+        human_filt_pos_msg.header.frame_id = self.world_frame
+        human_filt_pos_msg.poses = []
+
+        # Add the positions of all keypoints
+        for i in range(self.n_kpts):
+            pose = Pose()
+            x_idx = self.kalman_predictor.p_idx[i*3]
+            y_idx = self.kalman_predictor.p_idx[i*3 + 1]
+            z_idx = self.kalman_predictor.p_idx[i*3 + 2]
+            pose.position.x = self.kalman_predictor.kalman_filter.x[x_idx]
+            pose.position.y = self.kalman_predictor.kalman_filter.x[y_idx]
+            pose.position.z = self.kalman_predictor.kalman_filter.x[z_idx]
+            pose.orientation.w = 1.0 # dummy value (orientation.x, y, z are 0.0 by default)
+
+            human_filt_pos_msg.poses.append(pose)
+
+        self.human_filt_pos_pub.publish(human_filt_pos_msg)
+
+
+    def publish_human_filt_vel(self):
+        # Initialize PoseArray message
+        human_filt_vel_msg = PoseArray() # TODO: Change the message type to TwistArray (not available in geometry_msgs)
+
+        # Set the header
+        human_filt_vel_msg.header.stamp = rospy.Time.now()
+        human_filt_vel_msg.header.frame_id = self.world_frame
+        human_filt_vel_msg.poses = []
+
+        # Add the velocities of all keypoints
+        for i in range(self.n_kpts):
+            pose = Pose()
+            x_idx = self.kalman_predictor.v_idx[i*3]
+            y_idx = self.kalman_predictor.v_idx[i*3 + 1]
+            z_idx = self.kalman_predictor.v_idx[i*3 + 2]
+            pose.position.x = self.kalman_predictor.kalman_filter.x[x_idx]
+            pose.position.y = self.kalman_predictor.kalman_filter.x[y_idx]
+            pose.position.z = self.kalman_predictor.kalman_filter.x[z_idx]
+            pose.orientation.w = 1.0
+
+            human_filt_vel_msg.poses.append(pose)
+
+        self.human_filt_vel_pub.publish(human_filt_vel_msg)
 
     
-    def predict_update_step(self, iter, logs_dir, num_steps) -> None:
-        # Write the state covariance matrix to a new file 'P_i.csv'
-        # self.write_cov_matrix(logs_dir, iter)
-
-        # Plot the covariance matrix P as a heatmap
-        self.plot_cov_matrix(iter)
+    def predict_update_step(self, iter, logs_dir, num_steps, dump_to_file: bool=False, plot_covariance: bool=False) -> None:
+        # Publish filtered human position and velocity
+        # self.publish_human_filt_pos()
+        # self.publish_human_filt_vel()
 
         # PREDICT human_robot_system NEXT state using kalman_predictor
         self.kalman_predictor.predict()
 
-        ######################################################################### TODO: K-STEP PREDICT IS VERY SLOW
-        # # k-step ahead prediction of human_robot_system state
-        # pred_state, pred_cov = self.kalman_predictor.k_step_predict(num_steps)
+        # k-step ahead prediction of human_robot_system state
+        pred_x_mean, pred_x_var = self.kalman_predictor.k_step_predict(num_steps)
 
-        # # DUBUG: Print the predicted state and covariance
-        # # rospy.loginfo(f"Predicted State: {pred_state}\n")
-        # # rospy.loginfo(f"Predicted Covariance: {pred_cov}\n\n")
+        # Publish the sequence of predicted states and variances for the human agent
+        human_state_traj = pred_x_mean[:self.kalman_predictor.model.human_model.n_states]
+        human_var_traj = pred_x_var[:self.kalman_predictor.model.human_model.n_states]
+        self.publish_future_traj(human_state_traj, self.pred_state_pub, num_steps)
+        self.publish_future_traj(human_var_traj, self.pred_variance_pub, num_steps)
 
-        ######################################################################### TODO: FIX THE PUBLISHING OF PREDICTED STATE AND COVARIANCE OR CHANGE WITH SAVING TO FILE
-        # # Publish the sequence of predicted states along with their covariances
-        # self.publish_state(pred_state)
-        # self.publish_covariance(pred_cov)
+        if plot_covariance:
+            # Plot the covariance matrix P as a heatmap
+            self.plot_cov_matrix(iter)
+
+        if dump_to_file:
+            # Dump the sequence of predicted states and variances for the human agent to a file
+            np.savez(os.path.join(logs_dir, f'human_traj_iter_{iter}.npz'),
+                     pred_human_x=human_state_traj,
+                     pred_human_var=human_var_traj,
+                     filt_cov_mat=self.kalman_predictor.kalman_filter.P)
 
         # Check if human measurements are available. If not, skip model and kalman filter update
         if (np.isnan(self.human_meas)).all():
