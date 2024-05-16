@@ -55,6 +55,7 @@ hz = 100
 num_steps = 10
 dump_to_file = True
 plot_covariance = False
+TF_world_camera = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0] # [x y z qx qy qz qw]
 
 
 def read_params():
@@ -89,7 +90,8 @@ def read_params():
             hz, \
             num_steps, \
             dump_to_file, \
-            plot_covariance
+            plot_covariance, \
+            TF_world_camera
 
     try:
         dt =                                 rospy.get_param(node_name + '/dt')
@@ -141,6 +143,7 @@ def read_params():
         num_steps =                          rospy.get_param(node_name + '/num_steps', num_steps)
         dump_to_file =                       rospy.get_param(node_name + '/dump_to_file', dump_to_file)
         plot_covariance =                    rospy.get_param(node_name + '/plot_covariance', plot_covariance)
+        TF_world_camera =                    rospy.get_param(node_name + '/TF_world_camera', TF_world_camera)
 
     except KeyError:
         rospy.logerr(f"Some parameters are not set. Exiting.")
@@ -180,7 +183,8 @@ def read_params():
     hz={hz}, \n\
     num_steps={num_steps}, \n\
     dump_to_file={dump_to_file}, \n\
-    plot_covariance={plot_covariance}"
+    plot_covariance={plot_covariance}, \n\
+    TF_world_camera={TF_world_camera}"
     )
 
 
@@ -221,7 +225,8 @@ def main():
         human_filt_pos_topic=human_filt_pos_topic,
         human_filt_vel_topic=human_filt_vel_topic,
         camera_frame=camera_frame,
-        world_frame=world_frame
+        world_frame=world_frame,
+        TF_world_camera=TF_world_camera
     )
 
     # Initialize the kalman_predictor

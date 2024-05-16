@@ -58,6 +58,9 @@ catkin_install_python(PROGRAMS
 install(FILES
   config/params.yaml
   launch/predictor_bringup.launch
+  launch/record_data_online.launch
+  launch/record_data_offline.launch
+  launch/execute_trajectories.launch
   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
 )
 

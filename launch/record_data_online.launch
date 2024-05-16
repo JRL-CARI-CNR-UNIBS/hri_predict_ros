@@ -1,0 +1,15 @@
+<launch>
+    <!-- Select path to save the bag file to -->
+    <arg name="output_path" default="$(find hri_predict_ros)/logs/hri_predict_test_online" />
+
+    <!-- Select the topics to record -->
+    <arg name="joint_states_topic" default="/ur10/joint_states" />
+    <arg name="human_filt_pos_topic" default="/hri_prediction_node/human_filt_pos" />
+    <arg name="human_meas_pos_topic" default="/hri_prediction_node/human_meas_pos" />
+
+    <!-- Call rosbag record to record the joint states and human positions -->
+    <node name="record" pkg="rosbag" type="record" args="-O $(arg output_path)
+                                                            $(arg joint_states_topic)
+                                                            $(arg human_filt_pos_topic)
+                                                            $(arg human_meas_pos_topic)" />
+</launch>

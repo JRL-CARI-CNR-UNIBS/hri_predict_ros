@@ -1,0 +1,28 @@
+<launch>
+    <!-- Select path to save the bag file to -->
+    <arg name="output_path" default="$(find hri_predict_ros)/logs/hri_predict_test_offline" />
+
+    <!-- Select the topics to record -->
+    <arg name="joint_states_topic" default="/ur10/joint_states" />
+    <arg name="zed_skeleton_topic" default="/zed/zed_node/body_trk/skeletons" />
+    <arg name="zed_image_topic" default="/zed/zed_node/rgb/image_rect_color" />
+    <arg name="tf_topic" default="/tf" />
+    <arg name="tf_static_topic" default="/tf_static" />
+
+    <!-- Select the namespace to record topics to -->
+    <arg name="offline_ns" default="/offline" />
+
+    <!-- Call rosbag record to record the robot joint states and human keypoints + tf data -->
+    <node name="record" pkg="rosbag" type="record" args="-O $(arg output_path)
+                                                            $(arg offline_ns)$(arg joint_states_topic)
+                                                            $(arg offline_ns)$(arg zed_skeleton_topic)
+                                                            $(arg offline_ns)$(arg zed_image_topic)
+                                                            $(arg offline_ns)$(arg tf_topic)
+                                                            $(arg offline_ns)$(arg tf_static_topic)">
+        <remap from="$(arg offline_ns)$(arg joint_states_topic)" to="$(arg joint_states_topic)" />
+        <remap from="$(arg offline_ns)$(arg zed_skeleton_topic)" to="$(arg zed_skeleton_topic)" />
+        <remap from="$(arg offline_ns)$(arg zed_image_topic)" to="$(arg zed_image_topic)" />
+        <remap from="$(arg offline_ns)$(arg tf_topic)" to="$(arg tf_topic)" />
+        <remap from="$(arg offline_ns)$(arg tf_static_topic)" to="$(arg tf_static_topic)" />
+    </node>
+</launch>

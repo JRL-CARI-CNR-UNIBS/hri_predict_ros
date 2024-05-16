@@ -91,7 +91,7 @@ class RobotModel:
                                x_obstacle: np.ndarray=np.array([], dtype=float),
                                scaling: float=0.0) -> np.ndarray:
         if self.control_law == ControlLaw.TRAJ_FOLLOW:
-            u = acc_target
+            u = acc_target # + gain*(x_target - x) + gain_vel*(v_target - v)
         elif self.control_law == ControlLaw.SAFE_TRAJ_FOLLOW:
             u = scaling**2 * acc_target
         elif self.control_law == ControlLaw.ELASTIC_STRIP:

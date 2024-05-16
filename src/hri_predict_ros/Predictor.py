@@ -2,7 +2,6 @@ from dataclasses import dataclass, field
 import numpy as np
 import matplotlib.pyplot as plt
 import os
-import threading
 
 import hri_predict.HumanModel as HM
 import hri_predict.RobotModel as RM
@@ -10,6 +9,7 @@ from hri_predict.KalmanPredictor import KalmanPredictor
 
 import rospy
 import tf
+import tf.transformations
 from zed_msgs.msg import ObjectsStamped
 from sensor_msgs.msg import JointState
 from geometry_msgs.msg import PointStamped, PoseArray, Pose
@@ -31,6 +31,7 @@ class Predictor:
     tf_listener:            tf.TransformListener = field(init=False, repr=False)
     camera_frame:           str = field(default="", init=True, repr=True)
     world_frame:            str = field(default="world", init=True, repr=True)
+    cam_to_world_matrix:    np.ndarray = field(default=np.eye(4), init=False, repr=True)
 
 
     def __init__(self,
@@ -60,7 +61,8 @@ class Predictor:
                  human_filt_pos_topic: str="",   
                  human_filt_vel_topic: str="",   
                  camera_frame: str="",
-                 world_frame: str="world") -> None:
+                 world_frame: str="world",
+                 TF_world_camera: list=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]) -> None:
         
         human_control_law_      = HM.ControlLaw[human_control_law]
         human_kynematic_model_  = HM.KynematicModel[human_kynematic_model]
@@ -117,6 +119,34 @@ class Predictor:
         # Initialize TF listener
         self.tf_listener = tf.TransformListener()
 
+        # ONLY FOR OFFLINE TESTING
+        # # Wait for the transform to be available
+        # while not self.tf_listener.canTransform(camera_frame, world_frame, rospy.Time(0)) \
+        #       and not rospy.is_shutdown():
+        #     rospy.sleep(0.1)
+
+        # # Get the transformation
+        # (trans, rot) = self.tf_listener.lookupTransform(camera_frame, world_frame, rospy.Time(0))
+
+        # Assuming TF_world_camera is a list with the translation [tx, ty, tz] and quaternion [qx, qy, qz, qw]
+        translation_world_camera = np.array(TF_world_camera[0:3])
+        quaternion_world_camera = np.array(TF_world_camera[3:7])
+
+        rospy.loginfo(f"Translation from world to camera: {translation_world_camera}")
+        rospy.loginfo(f"Quaternion from world to camera: {quaternion_world_camera}")
+
+        # Convert the quaternion to a rotation matrix
+        rotation_matrix_world_camera = tf.transformations.quaternion_matrix(quaternion_world_camera)
+
+        # Create a translation matrix
+        translation_matrix_world_camera = tf.transformations.translation_matrix(translation_world_camera)
+
+        # Combine the rotation and translation to get the transformation matrix from the world frame to the camera frame
+        TF_matrix_world_camera = tf.transformations.concatenate_matrices(translation_matrix_world_camera, rotation_matrix_world_camera)
+
+        # Take the inverse of the transformation matrix to get the transformation matrix from the camera frame to the world frame
+        self.cam_to_world_matrix = np.linalg.inv(TF_matrix_world_camera)
+
 
     def read_skeleton_cb(self, msg: ObjectsStamped) -> None:
         if msg.objects:
@@ -129,25 +159,36 @@ class Predictor:
 
                 # Convert keypoints to world frame
                 for i in range(self.n_kpts):
-                    # Create a PointStamped message for the keypoint position
-                    kpt = PointStamped()
-                    kpt.header.stamp = rospy.Time.now()
-                    kpt.header.frame_id = self.camera_frame
-                    kpt.point.x = self.skeleton_kpts[i][0]
-                    kpt.point.y = self.skeleton_kpts[i][1]
-                    kpt.point.z = self.skeleton_kpts[i][2]
+                    # # Create a PointStamped message for the keypoint position
+                    # kpt = PointStamped()
+                    # kpt.header.stamp = rospy.Time.now()
+                    # kpt.header.frame_id = self.camera_frame
+                    # kpt.point.x = self.skeleton_kpts[i][0]
+                    # kpt.point.y = self.skeleton_kpts[i][1]
+                    # kpt.point.z = self.skeleton_kpts[i][2]
 
-                    # Transform the point to the world frame
-                    try:
-                        kpt_world = self.tf_listener.transformPoint(self.world_frame, kpt)
-                    except tf.ExtrapolationException as e:
-                        rospy.logwarn(f"TF Exception: {e}")
-                        continue
+                    # # Transform the point to the world frame
+                    # try:
+                    #     kpt_world = self.tf_listener.transformPoint(self.world_frame, kpt)
+                    # except tf.ExtrapolationException as e:
+                    #     rospy.logwarn(f"TF Exception: {e}")
+                    #     continue
 
-                    # Update the keypoint position in the world frame
-                    self.skeleton_kpts[i][0] = kpt_world.point.x
-                    self.skeleton_kpts[i][1] = kpt_world.point.y
-                    self.skeleton_kpts[i][2] = kpt_world.point.z
+                    # # Update the keypoint position in the world frame
+                    # self.skeleton_kpts[i][0] = kpt_world.point.x
+                    # self.skeleton_kpts[i][1] = kpt_world.point.y
+                    # self.skeleton_kpts[i][2] = kpt_world.point.z
+
+                    # ONLY FOR OFFLINE TESTING
+                    # Create a homogeneous coordinate for the keypoint position
+                    kpt = np.array([self.skeleton_kpts[i][0], self.skeleton_kpts[i][1], self.skeleton_kpts[i][2], 1])
+
+                    # Transform the keypoint to the world frame using the transformation matrix
+                    kpt_world = np.dot(self.cam_to_world_matrix, kpt)
+
+                    self.skeleton_kpts[i][0] = kpt_world[0]
+                    self.skeleton_kpts[i][1] = kpt_world[1]
+                    self.skeleton_kpts[i][2] = kpt_world[2]
             
         else:
             self.skeleton_kpts = np.full(self.skeleton_kpts.shape, np.nan)
@@ -272,8 +313,8 @@ class Predictor:
     
     def predict_update_step(self, iter, logs_dir, num_steps, dump_to_file: bool=False, plot_covariance: bool=False) -> None:
         # Publish filtered human position and velocity
-        # self.publish_human_filt_pos()
-        # self.publish_human_filt_vel()
+        self.publish_human_filt_pos()
+        self.publish_human_filt_vel()
 
         # PREDICT human_robot_system NEXT state using kalman_predictor
         self.kalman_predictor.predict()
@@ -294,6 +335,7 @@ class Predictor:
         if dump_to_file:
             # Dump the sequence of predicted states and variances for the human agent to a file
             np.savez(os.path.join(logs_dir, f'human_traj_iter_{iter}.npz'),
+                     timestamp=rospy.Time.now().to_sec(),
                      pred_human_x=human_state_traj,
                      pred_human_var=human_var_traj,
                      filt_cov_mat=self.kalman_predictor.kalman_filter.P)
