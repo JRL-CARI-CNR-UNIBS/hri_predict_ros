@@ -23,7 +23,7 @@ if not os.path.exists(log_dir):
 
 # Define global variables
 node_name = "hri_prediction_node"
-dt = 0.01
+dt: float=0.01
 human_control_law = None
 human_kynematic_model = None
 human_noisy_model = None
@@ -234,14 +234,15 @@ def main():
                                           P0_robot=robot_init_variance)
 
     # Set the rate of the node
-    rate = rospy.Rate(hz)
+    rate = rospy.Rate(1/dt)
 
     # Main loop
     i = 0
+    t = 0
     plt.figure()
     while not rospy.is_shutdown():
         try:
-            predictor.predict_update_step(i, log_dir, num_steps, dump_to_file, plot_covariance)
+            predictor.predict_update_step(i, t, log_dir, num_steps, dump_to_file, plot_covariance)
         except np.linalg.LinAlgError as e:
             rospy.logerr(f"LinAlgError: {e}")
             rospy.logerr("Resetting the Kalman Filter to the initial values.")
@@ -249,10 +250,9 @@ def main():
                                                   P0_robot=robot_init_variance)
         
         i += 1
-
+        t += dt
         rate.sleep()
 
-    rospy.spin()
     rospy.on_shutdown(shutdown_hook)
 
 

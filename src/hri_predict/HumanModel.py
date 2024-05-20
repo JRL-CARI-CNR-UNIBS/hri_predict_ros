@@ -2,7 +2,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 import numpy as np
 from scipy.linalg import block_diag
-from .utils import runge_kutta
+from filterpy.common import runge_kutta4 as rk4
+from .utils import runge_kutta4
 
 class ControlLaw(Enum):
     CONST_VEL = 'CONST_VEL'
@@ -101,6 +102,21 @@ class HumanModel:
             R_block = np.zeros((len(R_values), len(R_values)))
         self.R = block_diag(*[R_block for _ in range(self.n_kpts)]) # replicate the block for each keypoint
 
+        # Model dynamics
+        block = np.array([[1, dt,  0],
+                          [0,  1, dt],
+                          [0,  0,  1]], dtype=float)
+        self.F = block_diag(*[block for _ in range(self.n_dof)])
+
+        # Measurement function
+        block = np.array([[1, 0, 0]], dtype=float)
+        self.H = block_diag(*[block for _ in range(self.n_dof)])
+
+        # Control input matrix
+        self.B = np.zeros((self.n_states, n_dof))
+        for i in range(n_dof):
+            self.B[i*3+2, i] = 1.0
+
         # DEBUG: Print the model parameters
         print("\n======================================")
         print("    HumanModel:")
@@ -120,8 +136,49 @@ class HumanModel:
         return self.x
 
 
+    def compute_control_action(self,
+                               x_target: np.ndarray=np.array([], dtype=float),
+                               x_obstacle: np.ndarray=np.array([], dtype=float)) -> np.ndarray:
+        if self.control_law == ControlLaw.CONST_ACC:
+            u = np.zeros(self.n_dof)
+
+        # elif self.control_law == ControlLaw.PD:
+        #     u = - self.Kp * (self.x[self.p_idx] - x_target) \
+        #         - self.Kd * self.x[self.v_idx]
+        
+        # elif self.control_law == ControlLaw.PD_REPULSE:
+        #     u = - self.Kp * (self.x[self.p_idx] - x_target) \
+        #         - self.Kd * self.x[self.v_idx] \
+        #         - self.K_repulse * (self.x[self.p_idx] - x_obstacle)
+        
+        # elif self.control_law == ControlLaw.IOC:
+        #     pass # TODO
+        
+        else:
+            raise ValueError('Invalid control law')
+
+        return u
+
+
+    def f(self, x: np.ndarray, dt: float, t: float, u: np.ndarray,
+          x_target: np.ndarray=np.array([], dtype=float),
+          x_obstacle: np.ndarray=np.array([], dtype=float)) -> np.ndarray:
+        # return self.F @ x + self.B @ self.compute_control_action(x_target, x_obstacle) # FINITE DIFFERENCES (EULER)
+
+        return runge_kutta4(x, t, u, dt, self.dynamics) # RK4
+        
+
+    def h(self, x: np.ndarray) -> np.ndarray:
+        if self.kynematic_model == KynematicModel.KEYPOINTS:
+            return self.H @ x
+        elif self.kynematic_model == KynematicModel.KYN_CHAIN:
+            return x # TODO
+        else:
+            raise ValueError('Invalid kynematic model')
+
+
     # double integrator dynamics
-    def dynamics(self, x0: np.ndarray, u0: np.ndarray) -> np.ndarray: 
+    def dynamics(self, x0: np.ndarray, t: float, u0: np.ndarray) -> np.ndarray:
         x_dot = np.zeros(self.n_states)
         x_dot[self.p_idx] = x0[self.v_idx]    # p_dot = v
         x_dot[self.v_idx] = x0[self.a_idx]    # v_dot = a
@@ -129,79 +186,34 @@ class HumanModel:
         return x_dot
 
     
-    def f(self, x: np.ndarray, dt: float) -> np.ndarray:
-        block = np.array([[1, dt,  0],
-                          [0,  1, dt],
-                          [0,  0,  1]], dtype=float)
-        F = block_diag(*[block for _ in range(self.n_dof)])
-        return F @ x
-       
+    # def step(self) -> None:
+    #     print("HumanModel.step()")
+    #     self.x = runge_kutta(self.dynamics,                                         # explicit RK4 integration
+    #                          self.x,
+    #                          self.compute_control_action(),
+    #                          self.dt) \
+    #              + np.random.multivariate_normal(np.zeros(self.n_states), self.W)   # gaussian noise
+  
 
-    def step(self) -> None:
-        self.x = runge_kutta(self.dynamics,                                         # explicit RK4 integration
-                             self.x,
-                             self.compute_control_action(),
-                             self.dt) \
-                 + np.random.multivariate_normal(np.zeros(self.n_states), self.W)   # gaussian noise
-
-
-    def compute_control_action(self,
-                               x_target: np.ndarray=np.array([], dtype=float),
-                               x_obstacle: np.ndarray=np.array([], dtype=float)) -> np.ndarray:
-        if self.control_law == ControlLaw.CONST_VEL:
-            u = np.zeros(self.n_dof)
-
-        elif self.control_law == ControlLaw.CONST_ACC:
-            u = self.x[self.a_idx]
-
-        elif self.control_law == ControlLaw.PD:
-            u = - self.Kp * (self.x[self.p_idx] - x_target) \
-                - self.Kd * self.x[self.v_idx]
-        
-        elif self.control_law == ControlLaw.PD_REPULSE:
-            u = - self.Kp * (self.x[self.p_idx] - x_target) \
-                - self.Kd * self.x[self.v_idx] \
-                - self.K_repulse * (self.x[self.p_idx] - x_obstacle)
-        
-        elif self.control_law == ControlLaw.IOC:
-            pass # TODO
-        
-        else:
-            raise ValueError('Invalid control law')
-
-        return u
+    # def output(self) -> np.ndarray:
+    #     if self.kynematic_model == KynematicModel.KEYPOINTS:
+    #         return self.x[self.p_idx]
+    #     elif self.kynematic_model == KynematicModel.KYN_CHAIN:
+    #         return self.fwd_kin()
+    #     else:
+    #         raise ValueError('Invalid kynematic model')
     
 
-    def output(self) -> np.ndarray:
-        if self.kynematic_model == KynematicModel.KEYPOINTS:
-            return self.x[self.p_idx]
-        elif self.kynematic_model == KynematicModel.KYN_CHAIN:
-            return self.fwd_kin()
-        else:
-            raise ValueError('Invalid kynematic model')
+    # # forward kinematics for the kinematic chain model
+    # def fwd_kin(self) -> np.ndarray:
+    #     return self.x # TODO
         
 
-    def h(self, x: np.ndarray) -> np.ndarray:
-        if self.kynematic_model == KynematicModel.KEYPOINTS:
-            block = np.array([[1, 0, 0]], dtype=float)
-            H = block_diag(*[block for _ in range(self.n_dof)])
-            return H @ x
-        elif self.kynematic_model == KynematicModel.KYN_CHAIN:
-            return x # TODO
-        else:
-            raise ValueError('Invalid kynematic model')
-    
-
-    # forward kinematics for the kinematic chain model
-    def fwd_kin(self) -> np.ndarray:
-        return self.x # TODO
-        
-
-    # inverse kinematics
-    def inv_kin(self, keypts: tuple) -> tuple:
-        if self.kynematic_model == KynematicModel.KEYPOINTS:
-            return keypts[0], keypts[1]                             # position, velocity  
-        elif self.kynematic_model == KynematicModel.KYN_CHAIN:
-            return keypts[0], keypts[1] # TODO                      # position, velocity
-        else:
-            raise ValueError('Invalid kynematic model')
+    # # inverse kinematics
+    # def inv_kin(self, keypts: tuple) -> tuple:
+    #     if self.kynematic_model == KynematicModel.KEYPOINTS:
+    #         return keypts[0], keypts[1]                             # position, velocity  
+    #     elif self.kynematic_model == KynematicModel.KYN_CHAIN:
+    #         return keypts[0], keypts[1] # TODO                      # position, velocity
+    #     else:
+    #         raise ValueError('Invalid kynematic model')

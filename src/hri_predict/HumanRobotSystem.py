@@ -76,32 +76,11 @@ class HumanRobotSystem:
         return np.concatenate((human_dyn, robot_dyn))
     
 
-    def f(self, x: np.ndarray, dt: float) -> np.ndarray:
-        human_f = self.human_model.f(x[:self.human_model.n_states], dt)
-        robot_f = self.robot_model.f(x[self.human_model.n_states:], dt)
+    def f(self, x: np.ndarray, dt: float, **fx_args) -> np.ndarray:
+        human_f = self.human_model.f(x[:self.human_model.n_states], dt, **fx_args)
+        robot_f = self.robot_model.f(x[self.human_model.n_states:], dt, **fx_args)
         return np.concatenate((human_f, robot_f))
 
-
-    def step(self, scaling: float=0.0) -> None:
-        self.human_model.step()
-        self.robot_model.step(scaling)
-
-
-    def compute_control_action(self,
-                               x_target: np.ndarray=np.array([], dtype=float),
-                               acc_target: np.ndarray=np.array([], dtype=float),
-                               x_obstacle: np.ndarray=np.array([], dtype=float),
-                               scaling: float=0.0) -> np.ndarray:
-        human_u = self.human_model.compute_control_action(x_target, x_obstacle)
-        robot_u = self.robot_model.compute_control_action(acc_target, x_obstacle, scaling)
-        return np.concatenate((human_u, robot_u))
-    
-
-    def output(self) -> np.ndarray:
-        human_out = self.human_model.output()
-        robot_out = self.robot_model.output()
-        return np.concatenate((human_out, robot_out))
-    
 
     def h(self, x: np.ndarray) -> np.ndarray:
         human_h = self.human_model.h(x[:self.human_model.n_states])
@@ -109,15 +88,36 @@ class HumanRobotSystem:
         return np.concatenate((human_h, robot_h))
     
 
-    # forward kinematics
-    def fwd_kin(self) -> np.ndarray:
-        human_fk = self.human_model.fwd_kin()
-        robot_fk = self.robot_model.fwd_kin()
-        return np.concatenate((human_fk, robot_fk))
+    # def step(self, scaling: float=0.0) -> None:
+    #     self.human_model.step()
+    #     self.robot_model.step(scaling)
 
 
-    # inverse kinematics
-    def inv_kin(self, keypts) -> np.ndarray:
-        human_ik = self.human_model.inv_kin(keypts)
-        robot_ik = self.robot_model.inv_kin(keypts)
-        return np.concatenate((human_ik, robot_ik))
+    # def compute_control_action(self,
+    #                            x_target: np.ndarray=np.array([], dtype=float),
+    #                            acc_target: np.ndarray=np.array([], dtype=float),
+    #                            x_obstacle: np.ndarray=np.array([], dtype=float),
+    #                            scaling: float=0.0) -> np.ndarray:
+    #     human_u = self.human_model.compute_control_action(x_target, x_obstacle)
+    #     robot_u = self.robot_model.compute_control_action(acc_target, x_obstacle, scaling)
+    #     return np.concatenate((human_u, robot_u))
+    
+
+    # def output(self) -> np.ndarray:
+    #     human_out = self.human_model.output()
+    #     robot_out = self.robot_model.output()
+    #     return np.concatenate((human_out, robot_out))
+    
+
+    # # forward kinematics
+    # def fwd_kin(self) -> np.ndarray:
+    #     human_fk = self.human_model.fwd_kin()
+    #     robot_fk = self.robot_model.fwd_kin()
+    #     return np.concatenate((human_fk, robot_fk))
+
+
+    # # inverse kinematics
+    # def inv_kin(self, keypts) -> np.ndarray:
+    #     human_ik = self.human_model.inv_kin(keypts)
+    #     robot_ik = self.robot_model.inv_kin(keypts)
+    #     return np.concatenate((human_ik, robot_ik))

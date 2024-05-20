@@ -8,6 +8,32 @@ def runge_kutta(dynamics, x0, u0, dt):
     return x0 + dt/6.0 * (k1 + 2.0*k2 + 2.0*k3 + k4)
 
 
+def runge_kutta4(y, x, u, dx, f):
+    """computes 4th order Runge-Kutta for dy/dx.
+
+    Parameters
+    ----------
+
+    y : scalar
+        Initial/current value for y
+    x : scalar
+        Initial/current value for x
+    dx : scalar
+        difference in x (e.g. the time step)
+    f : ufunc(y,x)
+        Callable function (y, x) that you supply to compute dy/dx for
+        the specified values.
+
+    """
+
+    k1 = dx * f(y, x, u)
+    k2 = dx * f(y + 0.5*k1, x + 0.5*dx, u)
+    k3 = dx * f(y + 0.5*k2, x + 0.5*dx, u)
+    k4 = dx * f(y + k3, x + dx, u)
+
+    return y + (k1 + 2*k2 + 2*k3 + k4) / 6.
+
+
 def get_near_psd(P, max_iter=10):
 
     eps = 1e-3  # Small positive jitter for regularization

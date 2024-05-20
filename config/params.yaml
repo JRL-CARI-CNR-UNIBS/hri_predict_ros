@@ -1,22 +1,22 @@
-dt: 0.01
+dt: 0.1
 human_control_law: CONST_ACC
 human_kynematic_model: KEYPOINTS
 human_n_dof: 3    # Number of degrees of freedom (i.e., number of joints if human_kynematic_model is KYN_CHAIN)
 human_n_kpts: 18  # Number of keypoints (equal to human_n_dof if human_kynematic_model is KEYPOINTS)
-human_noisy_model: True
+human_noisy_model: False
 human_noisy_measure: True
 human_meas_variance: # Measurement noise on the position of each human keypoint (Hip: all keypoints have the same variance)
-  x: 0.01
-  y: 0.01
-  z: 0.01
+  x: 0.05
+  y: 0.05
+  z: 0.05
 human_model_variance: # Model uncertainty for each human DoF
-  pos: 0.01
-  vel: 0.1
-  acc: 1.0
+  pos: 5.0
+  vel: 50.0
+  acc: 50.0
 human_init_variance: # [pos, vel, acc] for each human DoF
   pos: 10.0
-  vel: 100.0
-  acc: 1000.0
+  vel: 10.0
+  acc: 100.0
 robot_init_variance: # [pos, vel, acc] for each robot DoF
   pos: 0.01
   vel: 0.1
@@ -38,8 +38,8 @@ human_filt_pos_topic: "/human_filt_pos"
 human_filt_vel_topic: "/human_filt_vel"
 camera_frame: "zed_camera_link"
 world_frame: "world"
-hz: 100
-num_steps: 10
+hz: 100 # remove
+num_steps: 5 # check when is 0 (uncaught exception)
 dump_to_file: False
 plot_covariance: False
 TF_world_camera: [0.100575, -0.9304, 2.31042, 0.180663, 0.516604, 0.119341, 0.828395] # [x y z qx qy qz qw]

@@ -1,4 +1,5 @@
 from filterpy.kalman import MerweScaledSigmaPoints, UnscentedKalmanFilter, unscented_transform
+from filterpy.common import Q_discrete_white_noise
 from dataclasses import dataclass, field
 from typing import Optional
 import numpy as np
@@ -7,8 +8,6 @@ from .HumanRobotSystem import HumanRobotSystem
 from . import HumanModel as HM
 from . import RobotModel as RM
 from .utils import get_near_psd
-
-
 
 @dataclass
 class KalmanPredictor:
@@ -24,11 +23,12 @@ class KalmanPredictor:
 
     p_idx:          np.ndarray = field(default=np.array([]), init=False, repr=False)
     v_idx:          np.ndarray = field(default=np.array([]), init=False, repr=False)
+    a_idx:          np.ndarray = field(default=np.array([]), init=False, repr=False) 
 
 
     def __init__(self,
                  dt: float=0.01,
-                 human_control_law: HM.ControlLaw=HM.ControlLaw.CONST_VEL,
+                 human_control_law: HM.ControlLaw=HM.ControlLaw.CONST_ACC,
                  human_kynematic_model: HM.KynematicModel=HM.KynematicModel.KEYPOINTS,
                  human_noisy_model: bool=False,
                  human_noisy_measure: bool=False,
@@ -107,11 +107,25 @@ class KalmanPredictor:
         self.kalman_filter.P = P
 
         # Initialize the MODEL UNCERTAINTY matrix
-        Q_human = self.model.human_model.W
-        Q_robot = np.zeros((self.model.robot_model.n_states, self.model.robot_model.n_states))
-        Q = block_diag(Q_human, Q_robot)
-        self.kalman_filter.Q = Q
+        # Q_human = self.model.human_model.W
+        # Q_robot = np.zeros((self.model.robot_model.n_states, self.model.robot_model.n_states))
+        # Q = block_diag(Q_human, Q_robot)
 
+        n_dof = self.model.human_model.n_dof+self.model.robot_model.n_dof
+        # Q_variances_human = np.diag(self.model.human_model.W) # [pos, vel, acc] for the single DoF
+
+        # print("Q_variances_human: ", Q_variances_human, ", shape: ", Q_variances_human.shape)
+
+        # Q_variances_robot = np.zeros(self.model.robot_model.n_dof)
+
+        # print("Q_variances_robot: ", Q_variances_robot, ", shape: ", Q_variances_robot.shape)
+        # Q_variances = np.concatenate((Q_variances_human, Q_variances_robot))
+
+        # print("Q_variances: ", Q_variances, ", shape: ", Q_variances.shape)
+
+        var = 0.0
+        self.kalman_filter.Q = Q_discrete_white_noise(dim=3, dt=self.dt, var=var, block_size=n_dof)
+        
         # Initialize the MEASUREMENT NOISE matrix
         R_human = self.model.human_model.R
         R_robot = np.zeros((self.model.robot_model.n_outs, self.model.robot_model.n_outs))
@@ -128,7 +142,7 @@ class KalmanPredictor:
         print("======================================\n")
 
 
-    def predict(self):
+    def predict(self, **predict_args):
         # Check for semi-positive definitness of P matrix and correct if needed
         self.kalman_filter.P = get_near_psd(self.kalman_filter.P)
 
@@ -137,7 +151,7 @@ class KalmanPredictor:
         average_magnitude = np.mean(np.abs(eigenvalues))
         print("[KalmanPredictor::predict] Average magnitude of the eigenvalues of P: ", average_magnitude)
 
-        self.kalman_filter.predict()
+        self.kalman_filter.predict(**predict_args)
         self.model.set_state(self.kalman_filter.x[:self.model.human_model.n_states],
                              self.kalman_filter.x[self.model.human_model.n_states:])
 
@@ -148,7 +162,7 @@ class KalmanPredictor:
                              self.kalman_filter.x[self.model.human_model.n_states:])
 
 
-    def k_step_predict(self, k: int) -> tuple:
+    def k_step_predict(self, k: int, **predict_args) -> tuple:
         # calculate sigma points for current mean and covariance
         sigmas = self.kalman_filter.points_fn.sigma_points(self.kalman_filter.x,
                                                            self.kalman_filter.P)
@@ -159,7 +173,7 @@ class KalmanPredictor:
 
         for _ in range(k):
             # transform sigma points through the dynamics function
-            sigmas_f = np.array([self.kalman_filter.fx(s, self.kalman_filter._dt) for s in sigmas])
+            sigmas_f = np.array([self.kalman_filter.fx(s, self.kalman_filter._dt, **predict_args) for s in sigmas])
 
             # pass sigmas through the unscented transform to compute prior
             x, P = unscented_transform(sigmas_f,

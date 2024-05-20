@@ -52,6 +52,17 @@ class RobotModel:
 
         self.K_repulse = K_repulse
 
+        # Model dynamics
+        block = np.array([[1, dt,  0],
+                          [0,  1, dt],
+                          [0,  0,  1]], dtype=float)
+        self.F = block_diag(*[block for _ in range(self.n_dof)])
+
+        # Measurement function
+        block = np.array([[1, 0, 0],
+                            [0, 1, 0]], dtype=float)
+        self.H = block_diag(*[block for _ in range(self.n_dof)])
+
 
     def set_state(self, x0: np.ndarray) -> None:
         self.x = x0
@@ -60,6 +71,36 @@ class RobotModel:
     def get_state(self) -> np.ndarray:
         return self.x
 
+
+    def compute_control_action(self,
+                               acc_target: np.ndarray=np.array([], dtype=float),
+                               x_obstacle: np.ndarray=np.array([], dtype=float),
+                               scaling: float=0.0) -> np.ndarray:
+        if self.control_law == ControlLaw.TRAJ_FOLLOW:
+            u = acc_target # + gain*(x_target - x) + gain_vel*(v_target - v)
+
+        # elif self.control_law == ControlLaw.SAFE_TRAJ_FOLLOW:
+        #     u = scaling**2 * acc_target
+
+        # elif self.control_law == ControlLaw.ELASTIC_STRIP:
+        #     u = acc_target + self.K_repulse * (self.x[self.p_idx] - x_obstacle)
+        
+        # elif self.control_law == ControlLaw.SCALED_ELASTIC_STRIP:
+        #     u = scaling**2 * acc_target + self.K_repulse * (self.x[self.p_idx] - x_obstacle)
+        
+        else:
+            raise ValueError('Invalid control law')
+
+        return u
+    
+
+    def f(self, x: np.ndarray, dt: float, t: float, u: np.ndarray) -> np.ndarray:
+        return self.F @ x
+
+
+    def h(self, x: np.ndarray) -> np.ndarray:
+        return self.H @ x
+    
 
     # double integrator dynamics
     def dynamics(self, x0: np.ndarray, u0: np.ndarray) -> np.ndarray: 
@@ -70,56 +111,23 @@ class RobotModel:
         return x_dot
     
     
-    def f(self, x: np.ndarray, dt: float) -> np.ndarray:
-        block = np.array([[1, dt,  0],
-                          [0,  1, dt],
-                          [0,  0,  1]], dtype=float)
-        F = block_diag(*[block for _ in range(self.n_dof)])
-        return F @ x
-
-
-    def step(self, scaling: float=0.0) -> None:
-        self.x = runge_kutta(self.dynamics,                    # explicit RK4 integration
-                             self.x,
-                             self.compute_control_action(),
-                             self.dt)
-        self.t_nom += scaling*self.dt
-
-
-    def compute_control_action(self,
-                               acc_target: np.ndarray=np.array([], dtype=float),
-                               x_obstacle: np.ndarray=np.array([], dtype=float),
-                               scaling: float=0.0) -> np.ndarray:
-        if self.control_law == ControlLaw.TRAJ_FOLLOW:
-            u = acc_target # + gain*(x_target - x) + gain_vel*(v_target - v)
-        elif self.control_law == ControlLaw.SAFE_TRAJ_FOLLOW:
-            u = scaling**2 * acc_target
-        elif self.control_law == ControlLaw.ELASTIC_STRIP:
-            u = acc_target + self.K_repulse * (self.x[self.p_idx] - x_obstacle)
-        elif self.control_law == ControlLaw.SCALED_ELASTIC_STRIP:
-            u = scaling**2 * acc_target + self.K_repulse * (self.x[self.p_idx] - x_obstacle)
-        else:
-            raise ValueError('Invalid control law')
-
-        return u
+    # def step(self, scaling: float=0.0) -> None:
+    #     self.x = runge_kutta(self.dynamics,                    # explicit RK4 integration
+    #                          self.x,
+    #                          self.compute_control_action(),
+    #                          self.dt)
+    #     self.t_nom += scaling*self.dt
     
 
-    def output(self) -> np.ndarray:
-        return self.x[self.pv_idx]
+    # def output(self) -> np.ndarray:
+    #     return self.x[self.pv_idx]
     
 
-    def h(self, x: np.ndarray) -> np.ndarray:
-        block = np.array([[1, 0, 0],
-                            [0, 1, 0]], dtype=float)
-        H = block_diag(*[block for _ in range(self.n_dof)])
-        return H @ x
+    # # forward kinematics
+    # def fwd_kin(self):
+    #     return self.x # TODO
 
 
-    # forward kinematics
-    def fwd_kin(self):
-        return self.x # TODO
-
-
-    # inverse kinematics
-    def inv_kin(self, keypts: tuple) -> tuple:
-        return keypts[0], keypts[1] # TODO                      # position, velocity
+    # # inverse kinematics
+    # def inv_kin(self, keypts: tuple) -> tuple:
+    #     return keypts[0], keypts[1] # TODO                      # position, velocity
