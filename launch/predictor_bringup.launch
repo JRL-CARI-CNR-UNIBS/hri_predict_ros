@@ -1,7 +1,16 @@
 <launch>
+    <!-- CLI parameter to select offline/online use -->
+    <arg name="offline"/>
+
+    <!-- Set the /use_sim_time parameter -->
+    <group if="$(arg offline)">
+        <param name="/use_sim_time" value="true" />
+    </group>
+
     <!-- Load parameters from a yaml file -->
     <rosparam file="$(find hri_predict_ros)/config/params.yaml" command="load" ns="hri_prediction_node" />
 
     <!-- Launch the prediction node -->
     <node pkg="hri_predict_ros" type="prediction_node.py" name="hri_prediction_node" output="screen" />
+        <param name="hri_prediction_node/offline" value="$(arg offline)" />
 </launch>

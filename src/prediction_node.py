@@ -56,6 +56,13 @@ num_steps = 10
 dump_to_file = True
 plot_covariance = False
 TF_world_camera = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0] # [x y z qx qy qz qw]
+u_min_human = -100
+u_max_human = 100
+a_min_human = -50
+a_max_human = 50
+v_min_human = -5
+v_max_human = 5
+offline = False
 
 
 def read_params():
@@ -91,7 +98,14 @@ def read_params():
             num_steps, \
             dump_to_file, \
             plot_covariance, \
-            TF_world_camera
+            TF_world_camera, \
+            u_min_human, \
+            u_max_human, \
+            a_min_human, \
+            a_max_human, \
+            v_min_human, \
+            v_max_human, \
+            offline
 
     try:
         dt =                                 rospy.get_param(node_name + '/dt')
@@ -144,47 +158,69 @@ def read_params():
         dump_to_file =                       rospy.get_param(node_name + '/dump_to_file', dump_to_file)
         plot_covariance =                    rospy.get_param(node_name + '/plot_covariance', plot_covariance)
         TF_world_camera =                    rospy.get_param(node_name + '/TF_world_camera', TF_world_camera)
+        u_min_human =                        rospy.get_param(node_name + '/u_min_human', u_min_human)
+        u_max_human =                        rospy.get_param(node_name + '/u_max_human', u_max_human)
+        a_min_human =                        rospy.get_param(node_name + '/a_min_human', a_min_human)
+        a_max_human =                        rospy.get_param(node_name + '/a_max_human', a_max_human)
+        v_min_human =                        rospy.get_param(node_name + '/v_min_human', v_min_human)
+        v_max_human =                        rospy.get_param(node_name + '/v_max_human', v_max_human)
+        offline =                            rospy.get_param(node_name + '/offline')
+
+        if bool(offline):
+            rospy.logwarn("\n========================")
+            rospy.logwarn("Running in offline mode.")
+            rospy.logwarn("========================\n")
+            skeleton_topic = '/offline' + str(skeleton_topic)
+            robot_js_topic = '/offline' + str(robot_js_topic)
 
     except KeyError:
         rospy.logerr(f"Some parameters are not set. Exiting.")
         rospy.signal_shutdown("Parameters not set.")
         sys.exit(1)  # exit the program
 
-    rospy.loginfo(f"Loaded parameters: \n\
-    node_name={node_name}, \n\
-    dt={dt}, \n\
-    human_control_law={human_control_law}, \n\
-    human_kynematic_model={human_kynematic_model}, \n\
-    human_noisy_model={human_noisy_model}, \n\
-    human_noisy_measure={human_noisy_measure}, \n\
-    human_meas_variance={human_meas_variance}, \n\
-    human_model_variance={human_model_variance}, \n\
-    human_init_variance={human_init_variance}, \n\
-    robot_init_variance={robot_init_variance}, \n\
-    human_n_dof={human_n_dof}, \n\
-    human_n_kpts={human_n_kpts}, \n\
-    human_Kp={human_Kp}, \n\
-    human_Kd={human_Kd}, \n\
-    human_K_repulse={human_K_repulse}, \n\
-    robot_control_law={robot_control_law}, \n\
-    robot_n_dof={robot_n_dof}, \n\
-    alpha={alpha}, \n\
-    beta={beta}, \n\
-    kappa={kappa}, \n\
-    skeleton_topic={skeleton_topic}, \n\
-    robot_js_topic={robot_js_topic}, \n\
-    predicted_hri_state_topic={predicted_hri_state_topic}, \n\
-    predicted_hri_cov_topic={predicted_hri_cov_topic}, \n\
-    human_meas_topic={human_meas_topic}, \n\
-    human_filt_pos_topic={human_filt_pos_topic}, \n\
-    human_filt_vel_topic={human_filt_vel_topic}, \n\
-    camera_frame={camera_frame}, \n\
-    world_frame={world_frame}, \n\
-    hz={hz}, \n\
-    num_steps={num_steps}, \n\
-    dump_to_file={dump_to_file}, \n\
-    plot_covariance={plot_covariance}, \n\
-    TF_world_camera={TF_world_camera}"
+    rospy.loginfo(
+        f"Loaded parameters: \n\
+        node_name={node_name}, \n\
+        dt={dt}, \n\
+        human_control_law={human_control_law}, \n\
+        human_kynematic_model={human_kynematic_model}, \n\
+        human_noisy_model={human_noisy_model}, \n\
+        human_noisy_measure={human_noisy_measure}, \n\
+        human_meas_variance={human_meas_variance}, \n\
+        human_model_variance={human_model_variance}, \n\
+        human_init_variance={human_init_variance}, \n\
+        robot_init_variance={robot_init_variance}, \n\
+        human_n_dof={human_n_dof}, \n\
+        human_n_kpts={human_n_kpts}, \n\
+        human_Kp={human_Kp}, \n\
+        human_Kd={human_Kd}, \n\
+        human_K_repulse={human_K_repulse}, \n\
+        robot_control_law={robot_control_law}, \n\
+        robot_n_dof={robot_n_dof}, \n\
+        alpha={alpha}, \n\
+        beta={beta}, \n\
+        kappa={kappa}, \n\
+        skeleton_topic={skeleton_topic}, \n\
+        robot_js_topic={robot_js_topic}, \n\
+        predicted_hri_state_topic={predicted_hri_state_topic}, \n\
+        predicted_hri_cov_topic={predicted_hri_cov_topic}, \n\
+        human_meas_topic={human_meas_topic}, \n\
+        human_filt_pos_topic={human_filt_pos_topic}, \n\
+        human_filt_vel_topic={human_filt_vel_topic}, \n\
+        camera_frame={camera_frame}, \n\
+        world_frame={world_frame}, \n\
+        hz={hz}, \n\
+        num_steps={num_steps}, \n\
+        dump_to_file={dump_to_file}, \n\
+        plot_covariance={plot_covariance}, \n\
+        TF_world_camera={TF_world_camera}, \n\
+        u_min_human={u_min_human}, \n\
+        u_max_human={u_max_human}, \n\
+        a_min_human={a_min_human}, \n\
+        a_max_human={a_max_human}, \n\
+        v_min_human={v_min_human}, \n\
+        v_max_human={v_max_human}, \n\
+        offline={offline}"
     )
 
 
@@ -226,7 +262,13 @@ def main():
         human_filt_vel_topic=human_filt_vel_topic,
         camera_frame=camera_frame,
         world_frame=world_frame,
-        TF_world_camera=TF_world_camera
+        TF_world_camera=TF_world_camera,
+        u_min_human=u_min_human,
+        u_max_human=u_max_human,
+        a_min_human=a_min_human,
+        a_max_human=a_max_human,
+        v_min_human=v_min_human,
+        v_max_human=v_max_human
     )
 
     # Initialize the kalman_predictor

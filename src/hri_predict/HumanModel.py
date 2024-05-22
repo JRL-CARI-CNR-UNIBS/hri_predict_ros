@@ -43,6 +43,13 @@ class HumanModel:
     Kd:         float = field(default=1.0, init=True, repr=True)  # derivative gain for control law
     K_repulse:  float = field(default=1.0, init=True, repr=True)  # repulsion gain for control law
 
+    u_min:      float = field(default=-1.0, init=True, repr=True) # minimum control input
+    u_max:      float = field(default=1.0, init=True, repr=True)  # maximum control input
+    v_min:      float = field(default=-1.0, init=True, repr=True) # minimum velocity
+    v_max:      float = field(default=1.0, init=True, repr=True)  # maximum velocity
+    a_min:      float = field(default=-1.0, init=True, repr=True) # minimum acceleration
+    a_max:      float = field(default=1.0, init=True, repr=True)  # maximum acceleration
+
 
     def __init__(self,
                  control_law: ControlLaw=ControlLaw.CONST_VEL,
@@ -56,7 +63,13 @@ class HumanModel:
                  dt: float=0.01,
                  Kp: float=1.0,
                  Kd: float=1.0,
-                 K_repulse: float=1.0) -> None:
+                 K_repulse: float=1.0,
+                 u_min: float=-1.0,
+                 u_max: float=1.0,
+                 v_min: float=-1.0,
+                 v_max: float=1.0,
+                 a_min: float=-1.0,
+                 a_max: float=1.0) -> None:
         self.control_law = control_law
         self.kynematic_model = kynematic_model
         self.noisy_model = noisy_model
@@ -85,6 +98,14 @@ class HumanModel:
         self.v_idx = np.arange(1, self.n_states, 3)
         self.a_idx = np.arange(2, self.n_states, 3)
         self.pv_idx = np.sort(np.concatenate((self.p_idx, self.v_idx)))
+
+        # Saturation limits
+        self.u_min = u_min
+        self.u_max = u_max
+        self.v_min = v_min
+        self.v_max = v_max
+        self.a_min = a_min
+        self.a_max = a_max
 
         # Model uncertainty matrix
         W_values = [value for value in W.values()] # [pos, vel, acc] for the single DoF
@@ -156,6 +177,8 @@ class HumanModel:
         
         else:
             raise ValueError('Invalid control law')
+        
+        u = np.clip(u, self.u_min, self.u_max)
 
         return u
 
@@ -178,11 +201,15 @@ class HumanModel:
 
 
     # double integrator dynamics
-    def dynamics(self, x0: np.ndarray, t: float, u0: np.ndarray) -> np.ndarray:
+    def dynamics(self, x0: np.ndarray, t: float, u0: np.ndarray) -> np.ndarray:        
         x_dot = np.zeros(self.n_states)
         x_dot[self.p_idx] = x0[self.v_idx]    # p_dot = v
         x_dot[self.v_idx] = x0[self.a_idx]    # v_dot = a
         x_dot[self.a_idx] = u0                # a_dot = u
+
+        np.clip(x_dot[self.p_idx], self.v_min, self.v_max)
+        np.clip(x_dot[self.v_idx], self.a_min, self.a_max)
+
         return x_dot
 
     

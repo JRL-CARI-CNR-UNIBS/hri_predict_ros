@@ -37,7 +37,6 @@ class Predictor:
     cam_to_world_matrix:    np.ndarray = field(default=np.eye(4), init=False, repr=True)
 
 
-
     def __init__(self,
                  dt: float=0.01,
                  human_control_law: str='CONST_ACC',
@@ -66,7 +65,14 @@ class Predictor:
                  human_filt_vel_topic: str="",   
                  camera_frame: str="",
                  world_frame: str="world",
-                 TF_world_camera: list=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]) -> None:
+                 TF_world_camera: list=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                 u_min_human: float=-100,
+                 u_max_human: float=100,
+                 a_min_human: float=-50,
+                 a_max_human: float=50,
+                 v_min_human: float=-5,
+                 v_max_human: float=5) -> None:
+
         
         human_control_law_      = HM.ControlLaw[human_control_law]
         human_kynematic_model_  = HM.KynematicModel[human_kynematic_model]
@@ -93,8 +99,14 @@ class Predictor:
             robot_n_dof=robot_n_dof,
             alpha=alpha,
             beta=beta,
-            kappa=kappa
-        )
+            kappa=kappa,
+            u_min_human=u_min_human,
+            u_max_human=u_max_human,
+            a_min_human=a_min_human,
+            a_max_human=a_max_human,
+            v_min_human=v_min_human,
+            v_max_human=v_max_human
+            )
 
         self.n_kpts = human_n_kpts
 
@@ -162,13 +174,10 @@ class Predictor:
         translation_matrix_world_camera = tf.transformations.translation_matrix(translation_world_camera)
 
         # Combine the rotation and translation to get the transformation matrix from the world frame to the camera frame
-        TF_matrix_world_camera = tf.transformations.concatenate_matrices(
+        self.cam_to_world_matrix = tf.transformations.concatenate_matrices(
             translation_matrix_world_camera,
             rotation_matrix_world_camera
         )
-
-        # Take the inverse of the transformation matrix to get the transformation matrix from the camera frame to the world frame
-        self.cam_to_world_matrix = np.linalg.inv(TF_matrix_world_camera)
 
 
     def read_skeleton_cb(self, msg: ObjectsStamped) -> None:
@@ -315,8 +324,6 @@ class Predictor:
         head_msg.point.z = state[-1][self.kalman_predictor.p_idx[2]]
 
         self.pred_head_publisher.publish(head_msg)
-
-
 
 
     def publish_future_traj_stdDev(self,
@@ -468,7 +475,7 @@ class Predictor:
         human_state_traj = pred_x_mean[:self.kalman_predictor.model.human_model.n_states]
         human_var_traj = pred_x_var[:self.kalman_predictor.model.human_model.n_states]
         self.publish_future_traj(human_state_traj, self.pred_state_pub, num_steps)
-        # self.publish_future_traj(human_var_traj, self.pred_variance_pub, num_steps)
+        self.publish_future_traj(human_var_traj, self.pred_variance_pub, num_steps)
 
         self.publish_future_traj_stdDev(human_state_traj,
                                         human_var_traj,
@@ -512,8 +519,6 @@ class Predictor:
         current_meas[-12:] = 0.0 # zero out robot measurements # ELIMINATE
         # rospy.loginfo(f"Current measurement: {current_meas}") # ELIMINATE
 
-        
-
         if err_flag == 0:
             # UPDATE human_robot_system CURRENT measurement using kalman_predictor
             self.kalman_predictor.update(current_meas)
@@ -526,7 +531,6 @@ class Predictor:
         else:
             rospy.logwarn("Unknown error. Skipping update step.")
         
-
         # Publish filtered human position and velocity
         self.publish_human_filt_pos()
         self.publish_human_filt_vel()

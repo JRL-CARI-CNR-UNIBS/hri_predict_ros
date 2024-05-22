@@ -8,3 +8,7 @@ pyreverse -o pdf /home/abel/projects/personal_ws/src/hri_predict_ros/src/hri_pre
 
 ## ZED Stereolabs body Tracking Documentation
 https://www.stereolabs.com/docs/body-tracking
+
+
+## Play BAG offline with sim_time
+rosbag play **--clock** *filename.bag* -r *playback_factor*

@@ -29,8 +29,8 @@ robot_n_dof: 6
 alpha: 0.3
 beta: 2.0
 kappa: 0.1
-skeleton_topic: "/offline/zed/zed_node/body_trk/skeletons"  # "/zed/zed_node/body_trk/skeletons" [uncomment to use online data]
-robot_js_topic: "/offline/ur10/joint_states"                # "/ur10/joint_states" [uncomment to use online data]
+skeleton_topic: "/zed/zed_node/body_trk/skeletons"
+robot_js_topic: "/ur10/joint_states"                
 predicted_hri_state_topic: "/predicted_hri_state"
 predicted_hri_cov_topic: "/predicted_hri_variance"
 human_meas_topic: "/human_meas_pos"
@@ -43,3 +43,9 @@ num_steps: 5 # check when is 0 (uncaught exception)
 dump_to_file: False
 plot_covariance: False
 TF_world_camera: [0.100575, -0.9304, 2.31042, 0.180663, 0.516604, 0.119341, 0.828395] # [x y z qx qy qz qw]
+u_min_human: -100
+u_max_human: 100
+a_min_human: -50
+a_max_human: 50
+v_min_human: -5
+v_max_human: 5

@@ -27,7 +27,13 @@ class HumanRobotSystem:
                  human_Kd: float=1.0,
                  human_K_repulse: float=1.0,
                  robot_control_law: RM.ControlLaw=RM.ControlLaw.TRAJ_FOLLOW,
-                 robot_n_dof: int=6) -> None:
+                 robot_n_dof: int=6,
+                 u_min_human: float=-100,
+                 u_max_human: float=100,
+                 a_min_human: float=-50,
+                 a_max_human: float=50,
+                 v_min_human: float=-5,
+                 v_max_human: float=5) -> None:
         self.dt = dt
 
         self.human_model = HM.HumanModel(control_law=human_control_law,
@@ -41,7 +47,13 @@ class HumanRobotSystem:
                                          dt=dt,
                                          Kp=human_Kp,
                                          Kd=human_Kd,
-                                         K_repulse=human_K_repulse)
+                                         K_repulse=human_K_repulse,
+                                         u_min=u_min_human,
+                                         u_max=u_max_human,
+                                         a_min=a_min_human,
+                                         a_max=a_max_human,
+                                         v_min=v_min_human,
+                                         v_max=v_max_human)
         
         self.robot_model = RM.RobotModel(control_law=robot_control_law,
                                          n_dof=robot_n_dof,

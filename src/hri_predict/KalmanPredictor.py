@@ -43,7 +43,13 @@ class KalmanPredictor:
                  robot_n_dof: int=6,
                  alpha: float=0.3,
                  beta: float=2.,
-                 kappa: float=0.1) -> None:
+                 kappa: float=0.1,
+                 u_min_human: float=-100,
+                 u_max_human: float=100,
+                 a_min_human: float=-50,
+                 a_max_human: float=50,
+                 v_min_human: float=-5,
+                 v_max_human: float=5) -> None:
         self.dt = dt
 
         self.model = HumanRobotSystem(dt=dt,
@@ -59,7 +65,13 @@ class KalmanPredictor:
                                       human_Kd=human_Kd,
                                       human_K_repulse=human_K_repulse,
                                       robot_control_law=robot_control_law,
-                                      robot_n_dof=robot_n_dof)   
+                                      robot_n_dof=robot_n_dof,
+                                      u_min_human=u_min_human,
+                                      u_max_human=u_max_human,
+                                      a_min_human=a_min_human,
+                                      a_max_human=a_max_human,
+                                      v_min_human=v_min_human,
+                                      v_max_human=v_max_human)   
 
        
         self.alpha = alpha
