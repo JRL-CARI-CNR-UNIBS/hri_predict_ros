@@ -1,6 +1,6 @@
 <launch>
     <!-- Select path to save the bag file to -->
-    <arg name="output_path" default="$(find hri_predict_ros)/logs/hri_predict_test_offline" />
+    <arg name="output_path" default="$(find hri_predict_ros)/logs/bag/hri_predict_test_offline" />
 
     <!-- Select the topics to record -->
     <arg name="joint_states_topic" default="/ur10/joint_states" />

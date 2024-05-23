@@ -2,8 +2,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 import numpy as np
 from scipy.linalg import block_diag
-from filterpy.common import runge_kutta4 as rk4
 from .utils import runge_kutta4
+from filterpy.common import Q_discrete_white_noise
 
 class ControlLaw(Enum):
     CONST_VEL = 'CONST_VEL'
@@ -34,7 +34,7 @@ class HumanModel:
     a_idx:      np.ndarray = field(init=False, repr=False)        # acceleration indices
   
     x:          np.ndarray = field(init=False, repr=False)                                       # state 
-    W:          np.ndarray = field(default=np.array([], dtype=float), init=True, repr=True)      # model uncertainty matrix
+    Q:          np.ndarray = field(default=np.array([], dtype=float), init=True, repr=True)      # model uncertainty matrix
     R:          np.ndarray = field(default=np.array([], dtype=float), init=True, repr=True)      # measurement noise matrix
   
     dt:         float = field(default=0.01, init=True, repr=True) # time step
@@ -57,7 +57,7 @@ class HumanModel:
                  noisy_model: bool=False,
                  noisy_measure: bool=False,
                  R: dict={},
-                 W: dict={},
+                 Q: dict={},
                  n_kpts: int=18,
                  n_dof: int=3,
                  dt: float=0.01,
@@ -75,6 +75,8 @@ class HumanModel:
         self.noisy_model = noisy_model
         self.noisy_measure = noisy_measure
 
+        self.n_kpts = n_kpts
+
         # Override n_dof for "KEYPOINTS" kinematic model: n_DoF = (x, y, z) for each keypoint
         if self.kynematic_model == KynematicModel.KEYPOINTS:
             self.n_dof = 3 * n_kpts
@@ -82,7 +84,7 @@ class HumanModel:
             self.n_dof = n_dof
         else:
             raise ValueError('Invalid kynematic model')
-        
+
         self.n_states = 3 * self.n_dof # (position, velocity, acceleration) for each DoF
         self.n_outs = self.n_dof       # x, y, z, position for each keypoint
 
@@ -108,12 +110,14 @@ class HumanModel:
         self.a_max = a_max
 
         # Model uncertainty matrix
-        W_values = [value for value in W.values()] # [pos, vel, acc] for the single DoF
         if self.noisy_model:
-            W_block = np.diag(W_values)
+            var_human = Q['pos'] # variance for the human model (just take the variance of the position for now)
+            self.Q = Q_discrete_white_noise(dim=3,
+                                            dt=self.dt,
+                                            var=var_human,
+                                            block_size=self.n_dof)
         else:
-            W_block = np.zeros((len(W_values), len(W_values))) 
-        self.W = block_diag(*[W_block for _ in range(self.n_dof)]) # replicate the block for each DoF
+            self.Q = np.zeros((self.n_states, self.n_states))
 
         # Measurement noise matrix
         R_values = [v for v in R.values()] # [pos_x, pos_y, pos_z] for the single keypoint
@@ -141,10 +145,11 @@ class HumanModel:
         # DEBUG: Print the model parameters
         print("\n======================================")
         print("    HumanModel:")
-        print("    self.x: ", self.x)
         print("    self.n_dof: ", self.n_dof)
         print("    self.n_states: ", self.n_states)
+        print("    self.n_kpts: ", self.n_kpts)
         print("    self.n_outs: ", self.n_outs)
+        print("    self.x: ", self.x, ", shape: ", self.x.shape)
         print("    self.R: ", self.R, ", shape: ", self.R.shape)
         print("======================================\n")
 
@@ -160,6 +165,7 @@ class HumanModel:
     def compute_control_action(self,
                                x_target: np.ndarray=np.array([], dtype=float),
                                x_obstacle: np.ndarray=np.array([], dtype=float)) -> np.ndarray:
+        
         if self.control_law == ControlLaw.CONST_ACC:
             u = np.zeros(self.n_dof)
 
@@ -186,9 +192,10 @@ class HumanModel:
     def f(self, x: np.ndarray, dt: float, t: float, u: np.ndarray,
           x_target: np.ndarray=np.array([], dtype=float),
           x_obstacle: np.ndarray=np.array([], dtype=float)) -> np.ndarray:
-        # return self.F @ x + self.B @ self.compute_control_action(x_target, x_obstacle) # FINITE DIFFERENCES (EULER)
 
-        return runge_kutta4(x, t, u, dt, self.dynamics) # RK4
+        x_next = runge_kutta4(x, t, u, dt, self.dynamics) # RK4
+        x_next += self.Q @ np.random.randn(self.n_states) # Add process uncertainty (white noise) # CHECK
+        return x_next
         
 
     def h(self, x: np.ndarray) -> np.ndarray:
@@ -207,20 +214,12 @@ class HumanModel:
         x_dot[self.v_idx] = x0[self.a_idx]    # v_dot = a
         x_dot[self.a_idx] = u0                # a_dot = u
 
+        # Saturation limits
         np.clip(x_dot[self.p_idx], self.v_min, self.v_max)
         np.clip(x_dot[self.v_idx], self.a_min, self.a_max)
 
         return x_dot
-
-    
-    # def step(self) -> None:
-    #     print("HumanModel.step()")
-    #     self.x = runge_kutta(self.dynamics,                                         # explicit RK4 integration
-    #                          self.x,
-    #                          self.compute_control_action(),
-    #                          self.dt) \
-    #              + np.random.multivariate_normal(np.zeros(self.n_states), self.W)   # gaussian noise
-  
+ 
 
     # def output(self) -> np.ndarray:
     #     if self.kynematic_model == KynematicModel.KEYPOINTS:

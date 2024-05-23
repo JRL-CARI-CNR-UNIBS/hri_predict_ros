@@ -23,6 +23,7 @@ if not os.path.exists(log_dir):
 
 # Define global variables
 node_name = "hri_prediction_node"
+pred_horizon: float=0.5
 dt: float=0.01
 human_control_law = None
 human_kynematic_model = None
@@ -51,8 +52,6 @@ human_filt_pos_topic = "/human_filt_pos"
 human_filt_vel_topic = "/human_filt_vel"
 camera_frame = "zed_camera_link"  # if sl::REFERENCE_FRAME::WORLD for the ZED camera is selected
 world_frame = "world"
-hz = 100
-num_steps = 10
 dump_to_file = True
 plot_covariance = False
 TF_world_camera = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0] # [x y z qx qy qz qw]
@@ -67,6 +66,7 @@ offline = False
 
 def read_params():
     global  dt, \
+            pred_horizon, \
             human_control_law, \
             human_kynematic_model, \
             human_noisy_model, \
@@ -94,8 +94,6 @@ def read_params():
             human_filt_vel_topic, \
             camera_frame, \
             world_frame, \
-            hz, \
-            num_steps, \
             dump_to_file, \
             plot_covariance, \
             TF_world_camera, \
@@ -109,6 +107,7 @@ def read_params():
 
     try:
         dt =                                 rospy.get_param(node_name + '/dt')
+        pred_horizon =                       rospy.get_param(node_name + '/pred_horizon')
         human_control_law =                  rospy.get_param(node_name + '/human_control_law')
         human_kynematic_model =              rospy.get_param(node_name + '/human_kynematic_model')
         human_noisy_model =                  rospy.get_param(node_name + '/human_noisy_model')
@@ -153,8 +152,6 @@ def read_params():
         human_filt_vel_topic =               rospy.get_param(node_name + '/human_filt_vel_topic', human_filt_vel_topic)
         camera_frame =                       rospy.get_param(node_name + '/camera_frame', camera_frame)
         world_frame =                        rospy.get_param(node_name + '/world_frame', world_frame)
-        hz =                                 rospy.get_param(node_name + '/hz', hz)
-        num_steps =                          rospy.get_param(node_name + '/num_steps', num_steps)
         dump_to_file =                       rospy.get_param(node_name + '/dump_to_file', dump_to_file)
         plot_covariance =                    rospy.get_param(node_name + '/plot_covariance', plot_covariance)
         TF_world_camera =                    rospy.get_param(node_name + '/TF_world_camera', TF_world_camera)
@@ -167,7 +164,8 @@ def read_params():
         offline =                            rospy.get_param(node_name + '/offline')
 
         if bool(offline):
-            rospy.logwarn("\n========================")
+            print()
+            rospy.logwarn("========================")
             rospy.logwarn("Running in offline mode.")
             rospy.logwarn("========================\n")
             skeleton_topic = '/offline' + str(skeleton_topic)
@@ -182,6 +180,7 @@ def read_params():
         f"Loaded parameters: \n\
         node_name={node_name}, \n\
         dt={dt}, \n\
+        pred_horizon={pred_horizon}, \n\
         human_control_law={human_control_law}, \n\
         human_kynematic_model={human_kynematic_model}, \n\
         human_noisy_model={human_noisy_model}, \n\
@@ -209,8 +208,6 @@ def read_params():
         human_filt_vel_topic={human_filt_vel_topic}, \n\
         camera_frame={camera_frame}, \n\
         world_frame={world_frame}, \n\
-        hz={hz}, \n\
-        num_steps={num_steps}, \n\
         dump_to_file={dump_to_file}, \n\
         plot_covariance={plot_covariance}, \n\
         TF_world_camera={TF_world_camera}, \n\
@@ -241,7 +238,7 @@ def main():
         human_noisy_model=human_noisy_model,
         human_noisy_measure=human_noisy_measure,
         human_R=human_meas_variance,
-        human_W=human_model_variance,
+        human_Q=human_model_variance,
         human_n_kpts=human_n_kpts,
         human_n_dof=human_n_dof,
         human_Kp=human_Kp,
@@ -277,6 +274,9 @@ def main():
 
     # Set the rate of the node
     rate = rospy.Rate(1/dt)
+
+    # Number of steps to predict
+    num_steps = int(pred_horizon / dt)
 
     # Main loop
     i = 0

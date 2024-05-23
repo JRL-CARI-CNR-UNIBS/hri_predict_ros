@@ -1,0 +1,12 @@
+<launch>
+    <!-- Define the 'fake' parameter -->
+    <arg name="fake" default="true" />
+
+    <!-- Load the RViz configuration file -->
+    <arg name="rviz_config" default="$(find hri_predict_ros)/config/cell.rviz"/>
+
+    <include file="$(find sharework_cembre_configurations)/launch/start.launch">
+        <arg name="fake" value="$(arg fake)"/>
+        <arg name="rviz_config" value="$(arg rviz_config)"/>
+    </include>
+</launch>

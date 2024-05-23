@@ -44,7 +44,7 @@ class Predictor:
                  human_noisy_model: bool=False,
                  human_noisy_measure: bool=False,
                  human_R: dict={},
-                 human_W: dict={},
+                 human_Q: dict={},
                  human_n_kpts: int=18,
                  human_n_dof: int=3,
                  human_Kp: float=1.0,
@@ -78,10 +78,6 @@ class Predictor:
         human_kynematic_model_  = HM.KynematicModel[human_kynematic_model]
         robot_control_law_      = RM.ControlLaw[robot_control_law]
 
-        # Override the number of DoF for the human agent if the kynematic model is KEYPOINTS
-        if human_kynematic_model_ == HM.KynematicModel.KEYPOINTS:
-            human_n_dof = human_n_kpts * 3 # n_dof = 3*n_keypoints (x, y, z for each keypoint)
-
         # Instantiate KalmanPredictor
         self.kalman_predictor = KalmanPredictor(
             dt=dt,
@@ -90,7 +86,8 @@ class Predictor:
             human_noisy_model=human_noisy_model,
             human_noisy_measure=human_noisy_measure,
             human_R=human_R,
-            human_W=human_W,
+            human_Q=human_Q,
+            human_n_kpts=human_n_kpts,
             human_n_dof=human_n_dof,
             human_Kp=human_Kp,
             human_Kd=human_Kd,
@@ -130,11 +127,11 @@ class Predictor:
         self.human_filt_pos_pub = rospy.Publisher(node_name + human_filt_pos_topic, PoseArray, queue_size=10)              # current human estimated position
         self.human_filt_vel_pub = rospy.Publisher(node_name + human_filt_vel_topic, PoseArray, queue_size=10)              # current human estimated velocity
 
-        # DEBUG
-        self.righthand_publisher = rospy.Publisher(node_name + predicted_hri_state_topic + '/right_hand', PointStamped, queue_size=10)
-        self.pred_righthand_publisher = rospy.Publisher(node_name + predicted_hri_state_topic + '/pred_right_hand', PointStamped, queue_size=10)
-        self.head_publisher = rospy.Publisher(node_name + predicted_hri_state_topic + '/head', PointStamped, queue_size=10)
-        self.pred_head_publisher = rospy.Publisher(node_name + predicted_hri_state_topic + '/pred_head', PointStamped, queue_size=10)
+        # # DEBUG
+        # self.righthand_publisher = rospy.Publisher(node_name + predicted_hri_state_topic + '/right_hand', PointStamped, queue_size=10)
+        # self.pred_righthand_publisher = rospy.Publisher(node_name + predicted_hri_state_topic + '/pred_right_hand', PointStamped, queue_size=10)
+        # self.head_publisher = rospy.Publisher(node_name + predicted_hri_state_topic + '/head', PointStamped, queue_size=10)
+        # self.pred_head_publisher = rospy.Publisher(node_name + predicted_hri_state_topic + '/pred_head', PointStamped, queue_size=10)
 
 
         # Initialize camera and world frames
@@ -154,7 +151,7 @@ class Predictor:
         # (trans, rot) = self.tf_listener.lookupTransform(camera_frame, world_frame, rospy.Time(0))
  
         # # Compose the transformation matrix from the world frame to the camera frame
-        # TF_matrix_world_camera = tf.transformations.concatenate_matrices(
+        # self.cam_to_world_matrix = tf.transformations.concatenate_matrices(
         #     tf.transformations.translation_matrix(trans),
         #     tf.transformations.quaternion_matrix(rot)
         # )
@@ -285,45 +282,45 @@ class Predictor:
 
         # self.test_publisher.publish(test_msg)
 
-        # DEBUG - right hand filtered
-        righthand_msg = PointStamped()
-        righthand_msg.header.stamp = time + rospy.Duration.from_sec(n_points*self.kalman_predictor.dt)
-        righthand_msg.header.frame_id = self.world_frame
-        righthand_msg.point.x = self.kalman_predictor.kalman_filter.x[self.kalman_predictor.p_idx[12]]
-        righthand_msg.point.y = self.kalman_predictor.kalman_filter.x[self.kalman_predictor.p_idx[13]]
-        righthand_msg.point.z = self.kalman_predictor.kalman_filter.x[self.kalman_predictor.p_idx[14]]
+        # # DEBUG - right hand filtered
+        # righthand_msg = PointStamped()
+        # righthand_msg.header.stamp = time + rospy.Duration.from_sec(n_points*self.kalman_predictor.dt)
+        # righthand_msg.header.frame_id = self.world_frame
+        # righthand_msg.point.x = self.kalman_predictor.kalman_filter.x[self.kalman_predictor.p_idx[12]]
+        # righthand_msg.point.y = self.kalman_predictor.kalman_filter.x[self.kalman_predictor.p_idx[13]]
+        # righthand_msg.point.z = self.kalman_predictor.kalman_filter.x[self.kalman_predictor.p_idx[14]]
                                          
-        self.righthand_publisher.publish(righthand_msg)
+        # self.righthand_publisher.publish(righthand_msg)
 
-        # DEBUG - head filtered
-        head_msg = PointStamped()
-        head_msg.header.stamp = time + rospy.Duration.from_sec(n_points*self.kalman_predictor.dt)
-        head_msg.header.frame_id = self.world_frame
-        head_msg.point.x = self.kalman_predictor.kalman_filter.x[self.kalman_predictor.p_idx[0]]
-        head_msg.point.y = self.kalman_predictor.kalman_filter.x[self.kalman_predictor.p_idx[1]]
-        head_msg.point.z = self.kalman_predictor.kalman_filter.x[self.kalman_predictor.p_idx[2]]
+        # # DEBUG - head filtered
+        # head_msg = PointStamped()
+        # head_msg.header.stamp = time + rospy.Duration.from_sec(n_points*self.kalman_predictor.dt)
+        # head_msg.header.frame_id = self.world_frame
+        # head_msg.point.x = self.kalman_predictor.kalman_filter.x[self.kalman_predictor.p_idx[0]]
+        # head_msg.point.y = self.kalman_predictor.kalman_filter.x[self.kalman_predictor.p_idx[1]]
+        # head_msg.point.z = self.kalman_predictor.kalman_filter.x[self.kalman_predictor.p_idx[2]]
                                                                  
-        self.head_publisher.publish(head_msg)
+        # self.head_publisher.publish(head_msg)
 
-        # DEBUG - right hand prediction
-        righthand_msg = PointStamped()
-        righthand_msg.header.stamp = time + rospy.Duration.from_sec(n_points*self.kalman_predictor.dt)
-        righthand_msg.header.frame_id = self.world_frame
-        righthand_msg.point.x = state[-1][self.kalman_predictor.p_idx[12]]
-        righthand_msg.point.y = state[-1][self.kalman_predictor.p_idx[13]]
-        righthand_msg.point.z = state[-1][self.kalman_predictor.p_idx[14]]
+        # # DEBUG - right hand prediction
+        # righthand_msg = PointStamped()
+        # righthand_msg.header.stamp = time + rospy.Duration.from_sec(n_points*self.kalman_predictor.dt)
+        # righthand_msg.header.frame_id = self.world_frame
+        # righthand_msg.point.x = state[-1][self.kalman_predictor.p_idx[12]]
+        # righthand_msg.point.y = state[-1][self.kalman_predictor.p_idx[13]]
+        # righthand_msg.point.z = state[-1][self.kalman_predictor.p_idx[14]]
                                          
-        self.pred_righthand_publisher.publish(righthand_msg)
+        # self.pred_righthand_publisher.publish(righthand_msg)
 
-        # DEBUG - head prediction
-        head_msg = PointStamped()
-        head_msg.header.stamp = time + rospy.Duration.from_sec(n_points*self.kalman_predictor.dt)
-        head_msg.header.frame_id = self.world_frame
-        head_msg.point.x = state[-1][self.kalman_predictor.p_idx[0]]
-        head_msg.point.y = state[-1][self.kalman_predictor.p_idx[1]]
-        head_msg.point.z = state[-1][self.kalman_predictor.p_idx[2]]
+        # # DEBUG - head prediction
+        # head_msg = PointStamped()
+        # head_msg.header.stamp = time + rospy.Duration.from_sec(n_points*self.kalman_predictor.dt)
+        # head_msg.header.frame_id = self.world_frame
+        # head_msg.point.x = state[-1][self.kalman_predictor.p_idx[0]]
+        # head_msg.point.y = state[-1][self.kalman_predictor.p_idx[1]]
+        # head_msg.point.z = state[-1][self.kalman_predictor.p_idx[2]]
 
-        self.pred_head_publisher.publish(head_msg)
+        # self.pred_head_publisher.publish(head_msg)
 
 
     def publish_future_traj_stdDev(self,
@@ -360,9 +357,9 @@ class Predictor:
             vel_std = np.sqrt(var[i][self.kalman_predictor.v_idx])
             acc_std = np.sqrt(var[i][self.kalman_predictor.a_idx])
 
-            point.positions = (pos - 3*pos_std).tolist()
-            point.velocities = (vel - 3*vel_std).tolist()
-            point.accelerations = (acc - 3*acc_std).tolist()
+            point.positions = (pos - 1*pos_std).tolist()
+            point.velocities = (vel - 1*vel_std).tolist()
+            point.accelerations = (acc - 1*acc_std).tolist()
             point.time_from_start = rospy.Duration.from_sec(i*self.kalman_predictor.dt)
 
             state_msg_lcl.points.append(point)
@@ -383,9 +380,9 @@ class Predictor:
             vel_std = np.sqrt(var[i][self.kalman_predictor.v_idx])
             acc_std = np.sqrt(var[i][self.kalman_predictor.a_idx])
 
-            point.positions = (pos + 3*pos_std).tolist()
-            point.velocities = (vel + 3*vel_std).tolist()
-            point.accelerations = (acc + 3*acc_std).tolist()
+            point.positions = (pos + 1*pos_std).tolist()
+            point.velocities = (vel + 1*vel_std).tolist()
+            point.accelerations = (acc + 1*acc_std).tolist()
             point.time_from_start = rospy.Duration.from_sec(i*self.kalman_predictor.dt)
 
             state_msg_ucl.points.append(point)
@@ -471,17 +468,9 @@ class Predictor:
         # k-step ahead prediction of human_robot_system state
         pred_x_mean, pred_x_var = self.kalman_predictor.k_step_predict(num_steps, **predict_args)
 
-        # Publish the sequence of predicted states and variances for the human agent
+        # Select the sequence of predicted states and variances ONLY for the HUMAN agent
         human_state_traj = pred_x_mean[:self.kalman_predictor.model.human_model.n_states]
         human_var_traj = pred_x_var[:self.kalman_predictor.model.human_model.n_states]
-        self.publish_future_traj(human_state_traj, self.pred_state_pub, num_steps)
-        self.publish_future_traj(human_var_traj, self.pred_variance_pub, num_steps)
-
-        self.publish_future_traj_stdDev(human_state_traj,
-                                        human_var_traj,
-                                        self.pred_state_lcl_pub,
-                                        self.pred_state_ucl_pub,
-                                        num_steps)
 
         # Plot the covariance matrix P as a heatmap
         if plot_covariance:
@@ -489,7 +478,7 @@ class Predictor:
 
         # Dump the sequence of predicted states and variances for the human agent to a file
         if dump_to_file:
-            np.savez(os.path.join(logs_dir, f'human_traj_iter_{iter}.npz'),
+            np.savez(os.path.join(logs_dir, 'npz', f'human_traj_iter_{iter}.npz'),
                      timestamp=rospy.Time.now().to_sec(),
                      pred_human_x=human_state_traj,
                      pred_human_var=human_var_traj,
@@ -535,11 +524,14 @@ class Predictor:
         self.publish_human_filt_pos()
         self.publish_human_filt_vel()
 
-
-    def write_cov_matrix(self, logs_dir, iter):
-        with open(os.path.join(logs_dir, f'P_{iter}.csv'), 'wb') as f:
-            np.savetxt(f, self.kalman_predictor.kalman_filter.P, delimiter=",")
-            rospy.loginfo(f"Saved state covariance matrix to 'P_{iter}.csv'")
+        # Publish k-step ahead predicted state and variance
+        self.publish_future_traj(human_state_traj, self.pred_state_pub, num_steps)
+        self.publish_future_traj(human_var_traj, self.pred_variance_pub, num_steps)
+        self.publish_future_traj_stdDev(human_state_traj,
+                                        human_var_traj,
+                                        self.pred_state_lcl_pub,
+                                        self.pred_state_ucl_pub,
+                                        num_steps)
 
 
     def plot_cov_matrix(self, iter):

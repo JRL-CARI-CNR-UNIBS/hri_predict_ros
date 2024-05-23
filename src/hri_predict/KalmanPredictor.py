@@ -33,7 +33,7 @@ class KalmanPredictor:
                  human_noisy_model: bool=False,
                  human_noisy_measure: bool=False,
                  human_R: dict={},
-                 human_W: dict={},
+                 human_Q: dict={},
                  human_n_kpts: int=18,
                  human_n_dof: int=3,
                  human_Kp: float=1.0,
@@ -58,7 +58,7 @@ class KalmanPredictor:
                                       human_noisy_model=human_noisy_model,
                                       human_noisy_measure=human_noisy_measure,
                                       human_R=human_R,
-                                      human_W=human_W,
+                                      human_Q=human_Q,
                                       human_n_kpts=human_n_kpts,
                                       human_n_dof=human_n_dof,
                                       human_Kp=human_Kp,
@@ -119,24 +119,23 @@ class KalmanPredictor:
         self.kalman_filter.P = P
 
         # Initialize the MODEL UNCERTAINTY matrix
-        # Q_human = self.model.human_model.W
-        # Q_robot = np.zeros((self.model.robot_model.n_states, self.model.robot_model.n_states))
-        # Q = block_diag(Q_human, Q_robot)
+        Q_human = self.model.human_model.Q
+        Q_robot = np.zeros((self.model.robot_model.n_states, self.model.robot_model.n_states))
+        Q = block_diag(Q_human, Q_robot)
 
-        n_dof = self.model.human_model.n_dof+self.model.robot_model.n_dof
-        # Q_variances_human = np.diag(self.model.human_model.W) # [pos, vel, acc] for the single DoF
+        # var_human = self.model.human_model.W[0,0]
+        # Q_human = Q_discrete_white_noise(dim=3,
+        #                                  dt=self.dt,
+        #                                  var=var_human,
+        #                                  block_size=self.model.human_model.n_dof)
+        
+        # var_robot = 0.0
+        # Q_robot = Q_discrete_white_noise(dim=3,
+        #                                  dt=self.dt,
+        #                                  var=var_robot,
+        #                                  block_size=self.model.robot_model.n_dof)
 
-        # print("Q_variances_human: ", Q_variances_human, ", shape: ", Q_variances_human.shape)
-
-        # Q_variances_robot = np.zeros(self.model.robot_model.n_dof)
-
-        # print("Q_variances_robot: ", Q_variances_robot, ", shape: ", Q_variances_robot.shape)
-        # Q_variances = np.concatenate((Q_variances_human, Q_variances_robot))
-
-        # print("Q_variances: ", Q_variances, ", shape: ", Q_variances.shape)
-
-        var = 0.0
-        self.kalman_filter.Q = Q_discrete_white_noise(dim=3, dt=self.dt, var=var, block_size=n_dof)
+        self.kalman_filter.Q = block_diag(Q_human, Q_robot)
         
         # Initialize the MEASUREMENT NOISE matrix
         R_human = self.model.human_model.R
@@ -155,13 +154,25 @@ class KalmanPredictor:
 
 
     def predict(self, **predict_args):
+        print("[KalmanPredictor::predict] Predicting...")
         # Check for semi-positive definitness of P matrix and correct if needed
         self.kalman_filter.P = get_near_psd(self.kalman_filter.P)
 
+        if (np.abs(np.imag(self.kalman_filter.P)) > 1e-6).any():
+            print("[KalmanPredictor::predict] Imaginary values in the P matrix: ", np.imag(self.kalman_filter.P))
+            import sys
+            sys.exit(1)
+
+        # Prevent imaginary values in the P matrix
+        self.kalman_filter.P = np.real(self.kalman_filter.P)
+        
         # Compute average magnitude of eigenvalues of P matrix
-        eigenvalues = np.linalg.eigvals(self.kalman_filter.P)
-        average_magnitude = np.mean(np.abs(eigenvalues))
-        print("[KalmanPredictor::predict] Average magnitude of the eigenvalues of P: ", average_magnitude)
+        # eigenvalues = np.linalg.eigvals(self.kalman_filter.P)
+        # average_magnitude = np.mean(np.abs(eigenvalues))
+        # print("[KalmanPredictor::predict] Average magnitude of the eigenvalues of P: ", average_magnitude)
+
+        # Display the P matrix
+        print("[KalmanPredictor::predict] P matrix: ", np.diag(self.kalman_filter.P)[:self.model.human_model.n_states][3:6])
 
         self.kalman_filter.predict(**predict_args)
         self.model.set_state(self.kalman_filter.x[:self.model.human_model.n_states],
@@ -169,7 +180,21 @@ class KalmanPredictor:
 
 
     def update(self, z: np.ndarray):
+        print("[KalmanPredictor::update] Updating...")
         self.kalman_filter.update(z)
+
+        # Check for semi-positive definitness of P matrix and correct if needed
+        self.kalman_filter.P = get_near_psd(self.kalman_filter.P)
+
+        if (np.abs(np.imag(self.kalman_filter.P)) > 1e-6).any():
+            print("[KalmanPredictor::predict] Imaginary values in the P matrix: ", np.imag(self.kalman_filter.P))
+            import sys
+            sys.exit(1)
+
+        # Prevent imaginary values in the P matrix
+        self.kalman_filter.P = np.real(self.kalman_filter.P)
+
+        print("[KalmanPredictor::update] P matrix: ", np.diag(self.kalman_filter.P)[:self.model.human_model.n_states][3:6])
         self.model.set_state(self.kalman_filter.x[:self.model.human_model.n_states],
                              self.kalman_filter.x[self.model.human_model.n_states:])
 
@@ -204,6 +229,8 @@ class KalmanPredictor:
             # store state means and variances for each step
             xx[_] = x
             variances[_] = np.diag(P)
+
+            print(f"[KalmanPredictor::k_step_predict] P matrix at step {_+1}: ", np.diag(P)[:self.model.human_model.n_states][3:6])
         
         return xx, variances
         
