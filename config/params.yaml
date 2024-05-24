@@ -4,20 +4,20 @@ human_control_law: CONST_ACC
 human_kynematic_model: KEYPOINTS
 human_n_dof: 3    # Number of degrees of freedom (i.e., number of joints if human_kynematic_model is KYN_CHAIN)
 human_n_kpts: 18 
-human_noisy_model: False
-human_noisy_measure: False
+human_noisy_model: True
+human_noisy_measure: True
 human_meas_variance: # Measurement noise on the position of each human keypoint (Hip: all keypoints have the same variance)
-  x: 0.05
-  y: 0.05
-  z: 0.05
+  x: 0.00025 # Hip: 3-sigma (99.5%) = 0.15 m ==> sigma 0 0.05 m ==> var = (0.05)^2 m^2
+  y: 0.00025
+  z: 0.00025
 human_model_variance: # Model uncertainty for each human DoF
-  pos: 0.1
-  vel: 1.0
-  acc: 1.0
-human_init_variance: # [pos, vel, acc] for each human DoF
-  pos: 10.0
-  vel: 100.0
-  acc: 100.0
+  pos: 0.0 # p_dot = v (exact)
+  vel: 0.0 # v_dot = a (exact)
+  acc: 0.5  # a_dot = u (u = 0 is very uncertain ==> add variance here)
+human_init_variance: # [pos, vel, acc] for each human DoF (3-sigma)
+  pos: 0.00025   # Hip: 3-sigma (99.5%) = 0.15 m ==> sigma 0 0.05 m ==> var = (0.05)^2 m^2
+  vel: 0.02844   # Hip: no keypoint moves faster than 1.6 m/s ==> 3-sigma (99.5%) = 1.6 m/s ==> var = (1.6/3)^2 m^2/s^2
+  acc: 1.1111  # Hip: no keypoint accelerates faster than 10 m/s^2 ==> 3-sigma (99.5%) = 10 m/s^2 ==> var = (10/3)^2 m^2/s^4
 robot_init_variance: # [pos, vel, acc] for each robot DoF
   pos: 0.01
   vel: 0.1

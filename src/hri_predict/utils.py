@@ -64,6 +64,9 @@ def get_near_psd(P, max_iter=10):
     
         # Reconstruct the matrix
         P = eigvec.dot(np.diag(eigval)).dot(eigvec.T)
+
+        # Force P to be real
+        P = np.real(P)
     
         # Check if P is now positive definite
         if is_positive_definite(P):

@@ -154,17 +154,18 @@ class KalmanPredictor:
 
 
     def predict(self, **predict_args):
-        print("[KalmanPredictor::predict] Predicting...")
+        # print("[KalmanPredictor::predict] Predicting...")
         # Check for semi-positive definitness of P matrix and correct if needed
         self.kalman_filter.P = get_near_psd(self.kalman_filter.P)
 
-        if (np.abs(np.imag(self.kalman_filter.P)) > 1e-6).any():
+        if (np.abs(np.imag(self.kalman_filter.P)) > 1e-13).any():
+            print("MAX VALUE: ", np.max(np.abs(np.imag(self.kalman_filter.P))))
             print("[KalmanPredictor::predict] Imaginary values in the P matrix: ", np.imag(self.kalman_filter.P))
             import sys
             sys.exit(1)
 
         # Prevent imaginary values in the P matrix
-        self.kalman_filter.P = np.real(self.kalman_filter.P)
+        # self.kalman_filter.P = np.real(self.kalman_filter.P)
         
         # Compute average magnitude of eigenvalues of P matrix
         # eigenvalues = np.linalg.eigvals(self.kalman_filter.P)
@@ -172,29 +173,30 @@ class KalmanPredictor:
         # print("[KalmanPredictor::predict] Average magnitude of the eigenvalues of P: ", average_magnitude)
 
         # Display the P matrix
-        print("[KalmanPredictor::predict] P matrix: ", np.diag(self.kalman_filter.P)[:self.model.human_model.n_states][3:6])
 
+        # print("[KalmanPredictor::predict] P matrix: ", np.diag(self.kalman_filter.P)[:self.model.human_model.n_states][3:6])
         self.kalman_filter.predict(**predict_args)
         self.model.set_state(self.kalman_filter.x[:self.model.human_model.n_states],
                              self.kalman_filter.x[self.model.human_model.n_states:])
 
 
     def update(self, z: np.ndarray):
-        print("[KalmanPredictor::update] Updating...")
+        # print("[KalmanPredictor::update] Updating...")
         self.kalman_filter.update(z)
 
         # Check for semi-positive definitness of P matrix and correct if needed
         self.kalman_filter.P = get_near_psd(self.kalman_filter.P)
 
-        if (np.abs(np.imag(self.kalman_filter.P)) > 1e-6).any():
-            print("[KalmanPredictor::predict] Imaginary values in the P matrix: ", np.imag(self.kalman_filter.P))
+        if (np.abs(np.imag(self.kalman_filter.P)) > 1e-13).any():
+            print("MAX VALUE: ", np.max(np.abs(np.imag(self.kalman_filter.P))))
+            print("[KalmanPredictor::update] Imaginary values in the P matrix: ", np.imag(self.kalman_filter.P))
             import sys
             sys.exit(1)
 
         # Prevent imaginary values in the P matrix
-        self.kalman_filter.P = np.real(self.kalman_filter.P)
+        # self.kalman_filter.P = np.real(self.kalman_filter.P)
 
-        print("[KalmanPredictor::update] P matrix: ", np.diag(self.kalman_filter.P)[:self.model.human_model.n_states][3:6])
+        # print("[KalmanPredictor::update] P matrix: ", np.diag(self.kalman_filter.P)[:self.model.human_model.n_states][3:6])
         self.model.set_state(self.kalman_filter.x[:self.model.human_model.n_states],
                              self.kalman_filter.x[self.model.human_model.n_states:])
 
@@ -230,7 +232,7 @@ class KalmanPredictor:
             xx[_] = x
             variances[_] = np.diag(P)
 
-            print(f"[KalmanPredictor::k_step_predict] P matrix at step {_+1}: ", np.diag(P)[:self.model.human_model.n_states][3:6])
+            # print(f"[KalmanPredictor::k_step_predict] P matrix at step {_+1}: ", np.diag(P)[:self.model.human_model.n_states][3:6])
         
         return xx, variances
         

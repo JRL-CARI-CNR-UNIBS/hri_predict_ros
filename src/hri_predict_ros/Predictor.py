@@ -331,7 +331,7 @@ class Predictor:
                                    n_points: int=1) -> None:
         # Lower confidence limit
         state_msg_lcl = JointTrajectory()
-        state_msg_lcl.header.stamp = rospy.Time.now()
+        state_msg_lcl.header.stamp = rospy.Time.now() # + rospy.Duration.from_sec(n_points*self.kalman_predictor.dt)
         state_msg_lcl.header.frame_id = self.world_frame
 
         state_msg_lcl.joint_names = []

@@ -193,9 +193,7 @@ class HumanModel:
           x_target: np.ndarray=np.array([], dtype=float),
           x_obstacle: np.ndarray=np.array([], dtype=float)) -> np.ndarray:
 
-        x_next = runge_kutta4(x, t, u, dt, self.dynamics) # RK4
-        x_next += self.Q @ np.random.randn(self.n_states) # Add process uncertainty (white noise) # CHECK
-        return x_next
+        return runge_kutta4(x, t, u, dt, self.dynamics) # RK4
         
 
     def h(self, x: np.ndarray) -> np.ndarray:
