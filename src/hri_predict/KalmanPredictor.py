@@ -49,7 +49,8 @@ class KalmanPredictor:
                  a_min_human: float=-50,
                  a_max_human: float=50,
                  v_min_human: float=-5,
-                 v_max_human: float=5) -> None:
+                 v_max_human: float=5,
+                 predict_steps: int=5) -> None:
         self.dt = dt
 
         self.model = HumanRobotSystem(dt=dt,
@@ -73,7 +74,6 @@ class KalmanPredictor:
                                       v_min_human=v_min_human,
                                       v_max_human=v_max_human)   
 
-       
         self.alpha = alpha
         self.beta = beta
         self.kappa = kappa
@@ -90,6 +90,11 @@ class KalmanPredictor:
                                                    dt=dt,
                                                    points=self.sigma_points)
         
+        # Prediction steps
+        self.predict_steps = predict_steps
+        self.xx = np.zeros((predict_steps, self.kalman_filter._dim_x))                               # mean after passing through dynamics function
+        self.variances = np.zeros((predict_steps, self.kalman_filter._dim_x))                        # covariance after passing through dynamics function  
+        
         # Set the indices for position, velocity and acceleration for the human model
         self.p_idx = np.arange(0, self.model.human_model.n_states, 3)
         self.v_idx = np.arange(1, self.model.human_model.n_states, 3)
@@ -100,8 +105,11 @@ class KalmanPredictor:
                    x0_human: Optional[np.ndarray]=None,
                    x0_robot: Optional[np.ndarray]=None) -> None:
         # Initialize the STATE of the model and the Kalman filter
-        if x0_human is not None and x0_robot is not None:
-            self.model.set_state(x0_human, x0_robot)
+        if x0_human is not None:
+            self.model.set_human_state(x0_human)
+        if x0_robot is not None:
+            self.model.set_robot_state(x0_robot)
+
         self.kalman_filter.x = self.model.get_state()
 
         # Initialize the MEASUREMENT VECTOR with nan values
@@ -176,8 +184,8 @@ class KalmanPredictor:
 
         # print("[KalmanPredictor::predict] P matrix: ", np.diag(self.kalman_filter.P)[:self.model.human_model.n_states][3:6])
         self.kalman_filter.predict(**predict_args)
-        self.model.set_state(self.kalman_filter.x[:self.model.human_model.n_states],
-                             self.kalman_filter.x[self.model.human_model.n_states:])
+        self.model.set_human_state(self.kalman_filter.x[:self.model.human_model.n_states])
+        self.model.set_robot_state(self.kalman_filter.x[self.model.human_model.n_states:])
 
 
     def update(self, z: np.ndarray):
@@ -197,20 +205,16 @@ class KalmanPredictor:
         # self.kalman_filter.P = np.real(self.kalman_filter.P)
 
         # print("[KalmanPredictor::update] P matrix: ", np.diag(self.kalman_filter.P)[:self.model.human_model.n_states][3:6])
-        self.model.set_state(self.kalman_filter.x[:self.model.human_model.n_states],
-                             self.kalman_filter.x[self.model.human_model.n_states:])
+        self.model.set_human_state(self.kalman_filter.x[:self.model.human_model.n_states])
+        self.model.set_robot_state(self.kalman_filter.x[self.model.human_model.n_states:])
 
 
-    def k_step_predict(self, k: int, **predict_args) -> tuple:
+    def k_step_predict(self, **predict_args) -> tuple:
         # calculate sigma points for current mean and covariance
         sigmas = self.kalman_filter.points_fn.sigma_points(self.kalman_filter.x,
-                                                           self.kalman_filter.P)
-        
-        sigmas_f = np.zeros((len(sigmas), self.kalman_filter._dim_x))               # sigma points after passing through dynamics function
-        xx = np.zeros((k, self.kalman_filter._dim_x))                               # mean after passing through dynamics function
-        variances = np.zeros((k, self.kalman_filter._dim_x))                        # covariance after passing through dynamics function      
+                                                           self.kalman_filter.P)   
 
-        for _ in range(k):
+        for _ in range(self.predict_steps):
             # transform sigma points through the dynamics function
             sigmas_f = np.array([self.kalman_filter.fx(s, self.kalman_filter._dt, **predict_args) for s in sigmas])
 
@@ -229,11 +233,11 @@ class KalmanPredictor:
             sigmas = self.kalman_filter.points_fn.sigma_points(x, P)
 
             # store state means and variances for each step
-            xx[_] = x
-            variances[_] = np.diag(P)
+            self.xx[_] = x
+            self.variances[_] = np.diag(P)
 
             # print(f"[KalmanPredictor::k_step_predict] P matrix at step {_+1}: ", np.diag(P)[:self.model.human_model.n_states][3:6])
         
-        return xx, variances
+        return self.xx, self.variances
         
     

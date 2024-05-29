@@ -48,3 +48,4 @@ a_min_human: -50
 a_max_human: 50
 v_min_human: -5
 v_max_human: 5
+max_time_skeleton_absent: 1 # Maximum time in seconds to wait for a skeleton to be detected

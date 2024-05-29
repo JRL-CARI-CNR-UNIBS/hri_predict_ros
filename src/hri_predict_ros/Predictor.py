@@ -18,23 +18,25 @@ from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
 @dataclass
 class Predictor:
-    kalman_predictor:       KalmanPredictor = field(init=False, repr=True)
-    n_kpts:                 int = field(default=0, init=False, repr=True)
-    skeleton_kpts:          np.ndarray = field(default=np.array([]), init=False, repr=False)
-    human_meas:             np.ndarray = field(init=False, repr=False)
-    robot_meas:             np.ndarray = field(init=False, repr=False)
-    skeleton_sub:           rospy.Subscriber = field(init=True, repr=False)
-    robot_state_sub:        rospy.Subscriber = field(init=True, repr=False)
-    pred_state_pub:         rospy.Publisher = field(init=True, repr=False)
-    pred_variance_pub:      rospy.Publisher = field(init=True, repr=False)
-    pred_state_lcl_pub:     rospy.Publisher = field(init=True, repr=False) # DEBUG: state - 3*std_dev
-    pred_state_ucl_pub:     rospy.Publisher = field(init=True, repr=False) # DEBUG: state + 3*std_dev
-    test_publisher:         rospy.Publisher = field(init=True, repr=False) # DEBUG
-    human_meas_pub:         rospy.Publisher = field(init=True, repr=False)
-    tf_listener:            tf.TransformListener = field(init=False, repr=False)
-    camera_frame:           str = field(default="", init=True, repr=True)
-    world_frame:            str = field(default="world", init=True, repr=True)
-    cam_to_world_matrix:    np.ndarray = field(default=np.eye(4), init=False, repr=True)
+    kalman_predictor:           KalmanPredictor = field(init=False, repr=True)
+    n_kpts:                     int = field(default=0, init=False, repr=True)
+    skeleton_kpts:              np.ndarray = field(default=np.array([]), init=False, repr=False)
+    human_meas:                 np.ndarray = field(init=False, repr=False)
+    robot_meas:                 np.ndarray = field(init=False, repr=False)
+    skeleton_sub:               rospy.Subscriber = field(init=True, repr=False)
+    robot_state_sub:            rospy.Subscriber = field(init=True, repr=False)
+    pred_state_pub:             rospy.Publisher = field(init=True, repr=False)
+    pred_variance_pub:          rospy.Publisher = field(init=True, repr=False)
+    pred_state_lcl_pub:         rospy.Publisher = field(init=True, repr=False) # DEBUG: state - 3*std_dev
+    pred_state_ucl_pub:         rospy.Publisher = field(init=True, repr=False) # DEBUG: state + 3*std_dev
+    test_publisher:             rospy.Publisher = field(init=True, repr=False) # DEBUG
+    human_meas_pub:             rospy.Publisher = field(init=True, repr=False)
+    tf_listener:                tf.TransformListener = field(init=False, repr=False)
+    camera_frame:               str = field(default="", init=True, repr=True)
+    world_frame:                str = field(default="world", init=True, repr=True)
+    cam_to_world_matrix:        np.ndarray = field(default=np.eye(4), init=False, repr=True)
+    skeleton_absent_count:      int = field(default=0, init=False, repr=False)
+    max_steps_skeleton_absent:  int = field(default=10, init=True, repr=True)
 
 
     def __init__(self,
@@ -71,9 +73,10 @@ class Predictor:
                  a_min_human: float=-50,
                  a_max_human: float=50,
                  v_min_human: float=-5,
-                 v_max_human: float=5) -> None:
+                 v_max_human: float=5,
+                 predict_steps: int=5,
+                 max_steps_skeleton_absent: int=10) -> None:
 
-        
         human_control_law_      = HM.ControlLaw[human_control_law]
         human_kynematic_model_  = HM.KynematicModel[human_kynematic_model]
         robot_control_law_      = RM.ControlLaw[robot_control_law]
@@ -102,7 +105,8 @@ class Predictor:
             a_min_human=a_min_human,
             a_max_human=a_max_human,
             v_min_human=v_min_human,
-            v_max_human=v_max_human
+            v_max_human=v_max_human,
+            predict_steps=predict_steps
             )
 
         self.n_kpts = human_n_kpts
@@ -116,6 +120,9 @@ class Predictor:
         # Initialize robot measurement vector ([pos, vel] for each DoF)
         self.robot_meas = np.full(2*robot_n_dof, np.nan, dtype=float)
 
+        # Maximum number of steps to tolerate skeleton absence
+        self.max_steps_skeleton_absent = max_steps_skeleton_absent
+
         # Initialize ROS subscribers and publishers
         self.skeleton_sub       = rospy.Subscriber(skeleton_topic, ObjectsStamped, self.read_skeleton_cb)
         self.robot_state_sub    = rospy.Subscriber(robot_js_topic, JointState, self.read_robot_js_cb)
@@ -126,13 +133,6 @@ class Predictor:
         self.human_meas_pub     = rospy.Publisher(node_name + human_meas_topic, PoseArray, queue_size=10)                  # current human measured position
         self.human_filt_pos_pub = rospy.Publisher(node_name + human_filt_pos_topic, PoseArray, queue_size=10)              # current human estimated position
         self.human_filt_vel_pub = rospy.Publisher(node_name + human_filt_vel_topic, PoseArray, queue_size=10)              # current human estimated velocity
-
-        # # DEBUG
-        # self.righthand_publisher = rospy.Publisher(node_name + predicted_hri_state_topic + '/right_hand', PointStamped, queue_size=10)
-        # self.pred_righthand_publisher = rospy.Publisher(node_name + predicted_hri_state_topic + '/pred_right_hand', PointStamped, queue_size=10)
-        # self.head_publisher = rospy.Publisher(node_name + predicted_hri_state_topic + '/head', PointStamped, queue_size=10)
-        # self.pred_head_publisher = rospy.Publisher(node_name + predicted_hri_state_topic + '/pred_head', PointStamped, queue_size=10)
-
 
         # Initialize camera and world frames
         self.camera_frame = camera_frame
@@ -179,6 +179,7 @@ class Predictor:
 
     def read_skeleton_cb(self, msg: ObjectsStamped) -> None:
         if msg.objects:
+            self.skeleton_absent_count = 0
             for obj in msg.objects: # TODO correct this: if multiple skeletons, selecting one and overwriting previous
                 # Extract skeleton keypoints from message ([x, y, z] for each kpt)
                 kpts = np.array([[kp.kp] for kp in obj.skeleton_3d.keypoints])
@@ -203,6 +204,7 @@ class Predictor:
             
         else:
             self.skeleton_kpts = np.full(self.skeleton_kpts.shape, np.nan)
+            self.skeleton_absent_count += 1
 
         # Update current human measurement vector
         self.human_meas = self.skeleton_kpts.flatten()
@@ -230,6 +232,10 @@ class Predictor:
         self.human_meas_pub.publish(human_meas_msg)
 
 
+    def skeleton_present(self) -> bool:
+        return self.skeleton_absent_count < self.max_steps_skeleton_absent
+
+
     def read_robot_js_cb(self, msg: JointState) -> None:
         pos = msg.position
         vel = msg.velocity
@@ -237,10 +243,13 @@ class Predictor:
         np.reshape(self.robot_meas, (1, -1))
 
 
-    def publish_future_traj(self, state: np.ndarray, pub: rospy.Publisher, n_points: int=1) -> None:
-        time = rospy.Time.now()
+    def publish_future_traj(self,
+                            state: np.ndarray,
+                            pub: rospy.Publisher,
+                            timestamp: rospy.Time,
+                            n_points: int=1) -> None:
         state_msg = JointTrajectory()
-        state_msg.header.stamp = time # + rospy.Duration.from_sec(n_points*self.kalman_predictor.dt) # REMOVE ADDITIVE TERM
+        state_msg.header.stamp = timestamp # + rospy.Duration.from_sec(n_points*self.kalman_predictor.dt) # REMOVE ADDITIVE TERM
         state_msg.header.frame_id = self.world_frame
 
         state_msg.joint_names = []
@@ -272,66 +281,17 @@ class Predictor:
 
         pub.publish(state_msg)
 
-        # # DEBUG
-        # test_msg = PointStamped()
-        # test_msg.header.stamp = time + rospy.Duration.from_sec(n_points*self.kalman_predictor.dt)
-        # test_msg.header.frame_id = self.world_frame
-        # test_msg.point.x = state[-1][self.kalman_predictor.p_idx[0]]
-        # test_msg.point.y = state[-1][self.kalman_predictor.p_idx[1]]
-        # test_msg.point.z = state[-1][self.kalman_predictor.p_idx[2]]
-
-        # self.test_publisher.publish(test_msg)
-
-        # # DEBUG - right hand filtered
-        # righthand_msg = PointStamped()
-        # righthand_msg.header.stamp = time + rospy.Duration.from_sec(n_points*self.kalman_predictor.dt)
-        # righthand_msg.header.frame_id = self.world_frame
-        # righthand_msg.point.x = self.kalman_predictor.kalman_filter.x[self.kalman_predictor.p_idx[12]]
-        # righthand_msg.point.y = self.kalman_predictor.kalman_filter.x[self.kalman_predictor.p_idx[13]]
-        # righthand_msg.point.z = self.kalman_predictor.kalman_filter.x[self.kalman_predictor.p_idx[14]]
-                                         
-        # self.righthand_publisher.publish(righthand_msg)
-
-        # # DEBUG - head filtered
-        # head_msg = PointStamped()
-        # head_msg.header.stamp = time + rospy.Duration.from_sec(n_points*self.kalman_predictor.dt)
-        # head_msg.header.frame_id = self.world_frame
-        # head_msg.point.x = self.kalman_predictor.kalman_filter.x[self.kalman_predictor.p_idx[0]]
-        # head_msg.point.y = self.kalman_predictor.kalman_filter.x[self.kalman_predictor.p_idx[1]]
-        # head_msg.point.z = self.kalman_predictor.kalman_filter.x[self.kalman_predictor.p_idx[2]]
-                                                                 
-        # self.head_publisher.publish(head_msg)
-
-        # # DEBUG - right hand prediction
-        # righthand_msg = PointStamped()
-        # righthand_msg.header.stamp = time + rospy.Duration.from_sec(n_points*self.kalman_predictor.dt)
-        # righthand_msg.header.frame_id = self.world_frame
-        # righthand_msg.point.x = state[-1][self.kalman_predictor.p_idx[12]]
-        # righthand_msg.point.y = state[-1][self.kalman_predictor.p_idx[13]]
-        # righthand_msg.point.z = state[-1][self.kalman_predictor.p_idx[14]]
-                                         
-        # self.pred_righthand_publisher.publish(righthand_msg)
-
-        # # DEBUG - head prediction
-        # head_msg = PointStamped()
-        # head_msg.header.stamp = time + rospy.Duration.from_sec(n_points*self.kalman_predictor.dt)
-        # head_msg.header.frame_id = self.world_frame
-        # head_msg.point.x = state[-1][self.kalman_predictor.p_idx[0]]
-        # head_msg.point.y = state[-1][self.kalman_predictor.p_idx[1]]
-        # head_msg.point.z = state[-1][self.kalman_predictor.p_idx[2]]
-
-        # self.pred_head_publisher.publish(head_msg)
-
 
     def publish_future_traj_stdDev(self,
                                    state: np.ndarray,
                                    var: np.ndarray,
                                    pub_lcl: rospy.Publisher,
                                    pub_ucl: rospy.Publisher,
+                                   timestamp: rospy.Time,
                                    n_points: int=1) -> None:
         # Lower confidence limit
         state_msg_lcl = JointTrajectory()
-        state_msg_lcl.header.stamp = rospy.Time.now() # + rospy.Duration.from_sec(n_points*self.kalman_predictor.dt)
+        state_msg_lcl.header.stamp = timestamp # + rospy.Duration.from_sec(n_points*self.kalman_predictor.dt)
         state_msg_lcl.header.frame_id = self.world_frame
 
         state_msg_lcl.joint_names = []
@@ -390,12 +350,12 @@ class Predictor:
         pub_ucl.publish(state_msg_ucl)
         
 
-    def publish_human_filt_pos(self):
+    def publish_human_filt_pos(self, timestamp):
         # Initialize PoseArray message
         human_filt_pos_msg = PoseArray()
 
         # Set the header
-        human_filt_pos_msg.header.stamp = rospy.Time.now()
+        human_filt_pos_msg.header.stamp = timestamp
         human_filt_pos_msg.header.frame_id = self.world_frame
         human_filt_pos_msg.poses = []
 
@@ -421,12 +381,12 @@ class Predictor:
         self.human_filt_pos_pub.publish(human_filt_pos_msg)
 
 
-    def publish_human_filt_vel(self):
+    def publish_human_filt_vel(self, timestamp):
         # Initialize PoseArray message
         human_filt_vel_msg = PoseArray() # TODO: Change the message type to TwistArray (not available in geometry_msgs)
 
         # Set the header
-        human_filt_vel_msg.header.stamp = rospy.Time.now()
+        human_filt_vel_msg.header.stamp = timestamp
         human_filt_vel_msg.header.frame_id = self.world_frame
         human_filt_vel_msg.poses = []
 
@@ -455,34 +415,20 @@ class Predictor:
     def predict_update_step(self,
                             iter: int,
                             t: float,
-                            logs_dir: str,
-                            num_steps: int,
+                            logs_dir: str="",
                             dump_to_file: bool=False,
                             plot_covariance: bool=False) -> None:
 
         predict_args = {'t': t, 'u': self.kalman_predictor.model.human_model.compute_control_action()}
+        timestamp=rospy.Time.now()
 
         # PREDICT human_robot_system NEXT state using kalman_predictor
-        self.kalman_predictor.predict(**predict_args)
+        if self.skeleton_absent_count < self.max_steps_skeleton_absent:
+            self.kalman_predictor.predict(**predict_args)
 
-        # k-step ahead prediction of human_robot_system state
-        pred_x_mean, pred_x_var = self.kalman_predictor.k_step_predict(num_steps, **predict_args)
-
-        # Select the sequence of predicted states and variances ONLY for the HUMAN agent
-        human_state_traj = pred_x_mean[:self.kalman_predictor.model.human_model.n_states]
-        human_var_traj = pred_x_var[:self.kalman_predictor.model.human_model.n_states]
-
-        # Plot the covariance matrix P as a heatmap
-        if plot_covariance:
-            self.plot_cov_matrix(iter)
-
-        # Dump the sequence of predicted states and variances for the human agent to a file
-        if dump_to_file:
-            np.savez(os.path.join(logs_dir, 'npz', f'human_traj_iter_{iter}.npz'),
-                     timestamp=rospy.Time.now().to_sec(),
-                     pred_human_x=human_state_traj,
-                     pred_human_var=human_var_traj,
-                     filt_cov_mat=self.kalman_predictor.kalman_filter.P)
+        # Publish filtered human position and velocity
+        self.publish_human_filt_pos(timestamp)
+        self.publish_human_filt_vel(timestamp)
 
         err_flag = 0
         # Check if human measurements are available. If not, skip model and kalman filter update
@@ -519,19 +465,43 @@ class Predictor:
             rospy.logwarn("Human-Robot measurements have not changed. Skipping update step.")
         else:
             rospy.logwarn("Unknown error. Skipping update step.")
-        
-        # Publish filtered human position and velocity
-        self.publish_human_filt_pos()
-        self.publish_human_filt_vel()
+
+        # k-step ahead prediction of human_robot_system state
+        pred_x_mean, pred_x_var = self.kalman_predictor.k_step_predict(**predict_args)
+
+        # Select the sequence of predicted states and variances ONLY for the HUMAN agent
+        human_state_traj = pred_x_mean[:self.kalman_predictor.model.human_model.n_states]
+        human_var_traj = pred_x_var[:self.kalman_predictor.model.human_model.n_states]
+
+        # Plot the covariance matrix P as a heatmap
+        if plot_covariance:
+            self.plot_cov_matrix(iter)
+
+        # Dump the sequence of predicted states and variances for the human agent to a file
+        if dump_to_file:
+            np.savez_compressed(
+                os.path.join(logs_dir, f'iter_{iter}.npz'),
+                timestamp=timestamp.to_sec(),
+                pred_human_x=human_state_traj,
+                pred_human_var=human_var_traj,
+                # filt_cov_mat=self.kalman_predictor.kalman_filter.P
+            )
 
         # Publish k-step ahead predicted state and variance
-        self.publish_future_traj(human_state_traj, self.pred_state_pub, num_steps)
-        self.publish_future_traj(human_var_traj, self.pred_variance_pub, num_steps)
+        self.publish_future_traj(human_state_traj,
+                                self.pred_state_pub,
+                                timestamp,
+                                self.kalman_predictor.predict_steps)
+        self.publish_future_traj(human_var_traj,
+                                self.pred_variance_pub,
+                                timestamp,
+                                self.kalman_predictor.predict_steps)
         self.publish_future_traj_stdDev(human_state_traj,
                                         human_var_traj,
                                         self.pred_state_lcl_pub,
                                         self.pred_state_ucl_pub,
-                                        num_steps)
+                                        timestamp,
+                                        self.kalman_predictor.predict_steps)
 
 
     def plot_cov_matrix(self, iter):

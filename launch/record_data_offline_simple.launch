@@ -1,6 +1,10 @@
 <launch>
+
+    <!-- Add command line parameter for subject number -->
+    <arg name="sub_number" />
+
     <!-- Select path to save the bag file to -->
-    <arg name="output_path" default="$(find hri_predict_ros)/logs/bag/hri_predict_test_offline_simple" />
+    <arg name="output_path" default="$(find hri_predict_ros)/logs/bag/test_offline_simple_sub_$(arg sub_number)" />
 
     <!-- Select the topics to record -->
     <arg name="zed_skeleton_topic" default="/zed/zed_node/body_trk/skeletons" />

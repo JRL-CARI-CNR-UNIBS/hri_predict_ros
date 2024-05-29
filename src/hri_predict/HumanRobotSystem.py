@@ -73,10 +73,13 @@ class HumanRobotSystem:
         print("======================================\n")
 
 
-    def set_state(self, x0_human: np.ndarray, x0_robot: np.ndarray) -> None:
+    def set_human_state(self, x0_human: np.ndarray) -> None:
         self.human_model.set_state(x0_human)
-        self.robot_model.set_state(x0_robot)
 
+
+    def set_robot_state(self, x0_robot: np.ndarray) -> None:
+        self.robot_model.set_state(x0_robot)
+        
 
     def get_state(self) -> np.ndarray:
         return np.concatenate((self.human_model.x, self.robot_model.x))

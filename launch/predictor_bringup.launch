@@ -2,9 +2,10 @@
     <!-- CLI parameter to select offline/online use -->
     <arg name="offline"/>
 
-    <!-- Set the /use_sim_time parameter -->
+    <!-- Set the /use_sim_time parameter and ask for the subject number parameter -->
     <group if="$(arg offline)">
         <param name="/use_sim_time" value="true" />
+        <arg name="sub_number"/>
     </group>
 
     <!-- Load parameters from a yaml file -->
@@ -13,4 +14,5 @@
     <!-- Launch the prediction node -->
     <node pkg="hri_predict_ros" type="prediction_node.py" name="hri_prediction_node" output="screen" />
         <param name="hri_prediction_node/offline" value="$(arg offline)" />
+        <param name="hri_prediction_node/sub_number" value="$(arg sub_number)" />
 </launch>

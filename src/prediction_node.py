@@ -7,20 +7,6 @@ from hri_predict_ros.Predictor import Predictor
 import matplotlib.pyplot as plt
 
 
-# Create a RosPack object
-rospack = rospkg.RosPack()
-
-# Get the path to the package this script is in
-package_path = rospack.get_path('hri_predict_ros')
-
-# Define the path to the logs directory
-log_dir = os.path.join(package_path, 'logs')
-
-# Check if the logs directory exists, if not, create it
-if not os.path.exists(log_dir):
-    os.makedirs(log_dir)
-
-
 # Define global variables
 node_name = "hri_prediction_node"
 pred_horizon: float=0.5
@@ -62,6 +48,8 @@ a_max_human = 50
 v_min_human = -5
 v_max_human = 5
 offline = False
+sub_number = 0
+max_time_skeleton_absent = 1
 
 
 def read_params():
@@ -103,7 +91,9 @@ def read_params():
             a_max_human, \
             v_min_human, \
             v_max_human, \
-            offline
+            offline, \
+            sub_number, \
+            max_time_skeleton_absent
 
     try:
         dt =                                 rospy.get_param(node_name + '/dt')
@@ -162,6 +152,8 @@ def read_params():
         v_min_human =                        rospy.get_param(node_name + '/v_min_human', v_min_human)
         v_max_human =                        rospy.get_param(node_name + '/v_max_human', v_max_human)
         offline =                            rospy.get_param(node_name + '/offline')
+        sub_number =                         rospy.get_param(node_name + '/sub_number')
+        max_time_skeleton_absent =           rospy.get_param(node_name + '/max_time_skeleton_absent')
 
         if bool(offline):
             print()
@@ -217,7 +209,9 @@ def read_params():
         a_max_human={a_max_human}, \n\
         v_min_human={v_min_human}, \n\
         v_max_human={v_max_human}, \n\
-        offline={offline}"
+        offline={offline}, \n\
+        sub_number={sub_number}, \n\
+        max_time_skeleton_absent={max_time_skeleton_absent}"
     )
 
 
@@ -229,6 +223,23 @@ def main():
     rospy.init_node(node_name, log_level=rospy.INFO)
     
     read_params()
+
+    rospack = rospkg.RosPack()
+    package_path = rospack.get_path('hri_predict_ros')
+    log_dir = os.path.join(package_path, 'logs', 'npz', ('sub_'+str(sub_number)))
+
+    # Check if the logs directory exists, if not, create it
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    rospy.loginfo(f"Dumping the logs to: {log_dir}")
+
+    # Set the rate of the node
+    rate = rospy.Rate(1/dt)
+
+    # Number of steps to predict
+    predict_steps = int(pred_horizon / dt)
+
+    max_steps_skeleton_absent = int(max_time_skeleton_absent / dt)
 
     # Create Predictor object to interface with ROS
     predictor = Predictor(
@@ -265,18 +276,27 @@ def main():
         a_min_human=a_min_human,
         a_max_human=a_max_human,
         v_min_human=v_min_human,
-        v_max_human=v_max_human
+        v_max_human=v_max_human,
+        predict_steps=predict_steps,
+        max_steps_skeleton_absent=max_steps_skeleton_absent
     )
 
+    while np.isnan(predictor.human_meas).any():
+        rospy.logwarn("Initialization: waiting for the human measurements.")
+        rate.sleep()
+
+    # Initialize the human state with the initial measurements
+    human_init_state = predictor.human_meas
+    rospy.loginfo(f"Human initial measurements: {human_init_state}, shape: {human_init_state.shape}")
+
     # Initialize the kalman_predictor
-    predictor.kalman_predictor.initialize(P0_human=human_init_variance,
+    human_init_state = predictor.kalman_predictor.model.human_model.x
+    pos_idx = predictor.kalman_predictor.model.human_model.p_idx
+    human_init_state[pos_idx] = predictor.human_meas
+
+    predictor.kalman_predictor.initialize(x0_human=human_init_state,
+                                          P0_human=human_init_variance,
                                           P0_robot=robot_init_variance)
-
-    # Set the rate of the node
-    rate = rospy.Rate(1/dt)
-
-    # Number of steps to predict
-    num_steps = int(pred_horizon / dt)
 
     # Main loop
     i = 0
@@ -284,7 +304,7 @@ def main():
     plt.figure()
     while not rospy.is_shutdown():
         try:
-            predictor.predict_update_step(i, t, log_dir, num_steps, dump_to_file, plot_covariance)
+            predictor.predict_update_step(i, t, log_dir, dump_to_file, plot_covariance)
         except np.linalg.LinAlgError as e:
             rospy.logerr(f"LinAlgError: {e}")
             rospy.logerr("Resetting the Kalman Filter to the initial values.")

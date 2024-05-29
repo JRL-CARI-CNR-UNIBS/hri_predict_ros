@@ -64,18 +64,32 @@ log_file = os.path.join(log_dir,f'gui_log_sub_{args.subject}.txt')
 with open(log_file, 'w'):
     pass
 
-# Configure the logger
-logging.basicConfig(filename=log_file,
-                    level=logging.INFO,
-                    format='%(asctime)s.%(msecs)03d - %(message)s',
-                    datefmt='%Y-%m-%d %H:%M:%S')
+# Create a separate logger for the header
+header_logger = logging.getLogger('header')
+header_logger.setLevel(logging.INFO)
+
+# Create a file handler
+handler = logging.FileHandler(log_file)
+handler.setLevel(logging.INFO)
+
+# Create a formatter and add it to the handler
+formatter = logging.Formatter('%(message)s')
+handler.setFormatter(formatter)
+
+# Add the handler to the logger
+header_logger.addHandler(handler)
 
 # Log the header
-logging.info(f"Task_name, Velocity, Instruction_id, Instruction")
+header_logger.info(f"Timestamp,Task_name,Velocity,Instruction_id,Instruction")
+
+# Now configure the root logger for the rest of the logs with timestamps
+logging.basicConfig(filename=log_file,
+                    level=logging.INFO,
+                    format='%(asctime)s.%(msecs)03d,%(message)s',
+                    datefmt='%Y-%m-%d %H:%M:%S')
 
 
-def interactive_gui(root, progress_bar, duration, delay=0.0):
-    time.sleep(delay)  # Delay before starting the progress bar
+def interactive_gui(root, progress_bar, duration):
     duration = int(duration*100) # 0.01 seconds per iteration
 
     # Update the progress bar in a loop
@@ -151,12 +165,12 @@ def main():
             # Update the window
             root.update()
 
-            # Display progress bar for the pause
+            # Initial delay to set up the environment
             if i == 1:
-                # Initial delay to set up the environment
-                interactive_gui(root, progress_bar, DELAY_PAUSE, DELAY_INITIAL)
-            else:
-                interactive_gui(root, progress_bar, DELAY_PAUSE)
+                time.sleep(DELAY_INITIAL)
+                
+            # Display progress bar for the pause
+            interactive_gui(root, progress_bar, DELAY_PAUSE)
             
             # Loop through all the task instructions
             for instruction_id, instruction in INSTRUCTIONS[task_name].items():
@@ -169,10 +183,9 @@ def main():
                 root.update()
 
                 # Display progress bar for the task
-                interactive_gui(root, progress_bar, duration, DELAY_TASK)
-
-                # Log the timestamp, task name, velocity, and instruction
+                time.sleep(DELAY_TASK)
                 logging.info(f"{task_name}, {velocity_id}, {instruction_id}, {instruction}")
+                interactive_gui(root, progress_bar, duration)
 
             i += 1
 
