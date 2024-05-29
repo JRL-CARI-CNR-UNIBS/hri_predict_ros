@@ -37,15 +37,16 @@ predicted_hri_cov_topic: "/predicted_hri_variance"
 human_meas_topic: "/human_meas_pos"
 human_filt_pos_topic: "/human_filt_pos"
 human_filt_vel_topic: "/human_filt_vel"
+human_filt_acc_topic: "/human_filt_acc"
 camera_frame: "zed_camera_link"
 world_frame: "world"
-dump_to_file: False
+dump_to_file: True
 plot_covariance: False
 TF_world_camera: [0.100575, -0.9304, 2.31042, 0.180663, 0.516604, 0.119341, 0.828395] # [x y z qx qy qz qw]
-u_min_human: -100
-u_max_human: 100
-a_min_human: -50
-a_max_human: 50
-v_min_human: -5
-v_max_human: 5
-max_time_skeleton_absent: 1 # Maximum time in seconds to wait for a skeleton to be detected
+u_min_human: -100 # not used for CONST_ACC
+u_max_human: 100 # not used for CONST_ACC
+a_min_human: -1.5
+a_max_human: 1.5
+v_min_human: -1.0
+v_max_human: 1.0
+max_time_skeleton_absent: 1.0 # Maximum time in seconds to wait for a skeleton to be detected

@@ -36,6 +36,7 @@ predicted_hri_cov_topic = "/predicted_hri_variance"
 human_meas_topic = "/human_meas_pos"
 human_filt_pos_topic = "/human_filt_pos"
 human_filt_vel_topic = "/human_filt_vel"
+human_filt_acc_topic = "/human_filt_acc"
 camera_frame = "zed_camera_link"  # if sl::REFERENCE_FRAME::WORLD for the ZED camera is selected
 world_frame = "world"
 dump_to_file = True
@@ -80,6 +81,7 @@ def read_params():
             human_meas_topic, \
             human_filt_pos_topic, \
             human_filt_vel_topic, \
+            human_filt_acc_topic, \
             camera_frame, \
             world_frame, \
             dump_to_file, \
@@ -140,6 +142,7 @@ def read_params():
         human_meas_topic =                   rospy.get_param(node_name + '/human_meas_topic', human_meas_topic)
         human_filt_pos_topic =               rospy.get_param(node_name + '/human_filt_pos_topic', human_filt_pos_topic)
         human_filt_vel_topic =               rospy.get_param(node_name + '/human_filt_vel_topic', human_filt_vel_topic)
+        human_filt_acc_topic =               rospy.get_param(node_name + '/human_filt_acc_topic', human_filt_acc_topic)
         camera_frame =                       rospy.get_param(node_name + '/camera_frame', camera_frame)
         world_frame =                        rospy.get_param(node_name + '/world_frame', world_frame)
         dump_to_file =                       rospy.get_param(node_name + '/dump_to_file', dump_to_file)
@@ -198,6 +201,7 @@ def read_params():
         human_meas_topic={human_meas_topic}, \n\
         human_filt_pos_topic={human_filt_pos_topic}, \n\
         human_filt_vel_topic={human_filt_vel_topic}, \n\
+        human_filt_acc_topic={human_filt_acc_topic}, \n\
         camera_frame={camera_frame}, \n\
         world_frame={world_frame}, \n\
         dump_to_file={dump_to_file}, \n\
@@ -268,6 +272,7 @@ def main():
         human_meas_topic=human_meas_topic,
         human_filt_pos_topic=human_filt_pos_topic,
         human_filt_vel_topic=human_filt_vel_topic,
+        human_filt_acc_topic=human_filt_acc_topic,
         camera_frame=camera_frame,
         world_frame=world_frame,
         TF_world_camera=TF_world_camera,
@@ -282,7 +287,7 @@ def main():
     )
 
     while np.isnan(predictor.human_meas).any():
-        rospy.logwarn("Initialization: waiting for the human measurements.")
+        rospy.logwarn("Initialization: waiting for human measurements.")
         rate.sleep()
 
     # Initialize the human state with the initial measurements
@@ -304,12 +309,9 @@ def main():
     plt.figure()
     while not rospy.is_shutdown():
         try:
-            predictor.predict_update_step(i, t, log_dir, dump_to_file, plot_covariance)
+            predictor.predict_update_step(i, t, log_dir, dump_to_file, plot_covariance, human_init_variance, robot_init_variance)
         except np.linalg.LinAlgError as e:
             rospy.logerr(f"LinAlgError: {e}")
-            rospy.logerr("Resetting the Kalman Filter to the initial values.")
-            predictor.kalman_predictor.initialize(P0_human=human_init_variance,
-                                                  P0_robot=robot_init_variance)
         
         i += 1
         t += dt

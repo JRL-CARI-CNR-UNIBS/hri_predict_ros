@@ -216,6 +216,12 @@ class HumanModel:
         np.clip(x_dot[self.p_idx], self.v_min, self.v_max)
         np.clip(x_dot[self.v_idx], self.a_min, self.a_max)
 
+        # Print if saturation occurs
+        if not np.array_equal(x_dot[self.p_idx], x0[self.v_idx]):
+            print("Saturation: v")
+        if not np.array_equal(x_dot[self.v_idx], x0[self.a_idx]):
+            print("Saturation: acceleration")
+
         return x_dot
  
 
