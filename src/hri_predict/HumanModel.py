@@ -50,6 +50,8 @@ class HumanModel:
     a_min:      float = field(default=-1.0, init=True, repr=True) # minimum acceleration
     a_max:      float = field(default=1.0, init=True, repr=True)  # maximum acceleration
 
+    x_dot:      np.ndarray = field(init=False, repr=False) # state derivative
+
 
     def __init__(self,
                  control_law: ControlLaw=ControlLaw.CONST_VEL,
@@ -109,6 +111,9 @@ class HumanModel:
         self.a_min = a_min
         self.a_max = a_max
 
+        # State derivative
+        self.x_dot = np.zeros(self.n_states)
+
         # Model uncertainty matrix
         if self.noisy_model:
             var_human = Q['pos'] # variance for the human model (just take the variance of the position for now)
@@ -151,6 +156,10 @@ class HumanModel:
         print("    self.n_outs: ", self.n_outs)
         print("    self.x: ", self.x, ", shape: ", self.x.shape)
         print("    self.R: ", self.R, ", shape: ", self.R.shape)
+        print("    self.v_min: ", self.v_min)
+        print("    self.v_max: ", self.v_max)
+        print("    self.a_min: ", self.a_min)
+        print("    self.a_max: ", self.a_max)
         print("======================================\n")
 
 
@@ -206,44 +215,9 @@ class HumanModel:
 
 
     # double integrator dynamics
-    def dynamics(self, x0: np.ndarray, t: float, u0: np.ndarray) -> np.ndarray:        
-        x_dot = np.zeros(self.n_states)
-        x_dot[self.p_idx] = x0[self.v_idx]    # p_dot = v
-        x_dot[self.v_idx] = x0[self.a_idx]    # v_dot = a
-        x_dot[self.a_idx] = u0                # a_dot = u
+    def dynamics(self, x0: np.ndarray, t: float, u0: np.ndarray) -> np.ndarray:     
+        self.x_dot[self.p_idx] = x0[self.v_idx]    # p_dot = v
+        self.x_dot[self.v_idx] = x0[self.a_idx]    # v_dot = a
+        self.x_dot[self.a_idx] = u0                # a_dot = u
 
-        # Saturation limits
-        np.clip(x_dot[self.p_idx], self.v_min, self.v_max)
-        np.clip(x_dot[self.v_idx], self.a_min, self.a_max)
-
-        # Print if saturation occurs
-        if not np.array_equal(x_dot[self.p_idx], x0[self.v_idx]):
-            print("Saturation: v")
-        if not np.array_equal(x_dot[self.v_idx], x0[self.a_idx]):
-            print("Saturation: acceleration")
-
-        return x_dot
- 
-
-    # def output(self) -> np.ndarray:
-    #     if self.kynematic_model == KynematicModel.KEYPOINTS:
-    #         return self.x[self.p_idx]
-    #     elif self.kynematic_model == KynematicModel.KYN_CHAIN:
-    #         return self.fwd_kin()
-    #     else:
-    #         raise ValueError('Invalid kynematic model')
-    
-
-    # # forward kinematics for the kinematic chain model
-    # def fwd_kin(self) -> np.ndarray:
-    #     return self.x # TODO
-        
-
-    # # inverse kinematics
-    # def inv_kin(self, keypts: tuple) -> tuple:
-    #     if self.kynematic_model == KynematicModel.KEYPOINTS:
-    #         return keypts[0], keypts[1]                             # position, velocity  
-    #     elif self.kynematic_model == KynematicModel.KYN_CHAIN:
-    #         return keypts[0], keypts[1] # TODO                      # position, velocity
-    #     else:
-    #         raise ValueError('Invalid kynematic model')
+        return self.x_dot

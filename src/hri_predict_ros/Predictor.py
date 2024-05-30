@@ -609,9 +609,11 @@ class Predictor:
                     np.savez_compressed(
                         os.path.join(logs_dir, f'iter_{iter}.npz'),
                         timestamp=timestamp.to_sec(),
+                        human_meas_pos=self.human_meas,
+                        human_filt_x=self.kalman_predictor.kalman_filter.x[:self.kalman_predictor.model.human_model.n_states],
+                        human_filt_var=np.diag(self.kalman_predictor.kalman_filter.P[:self.kalman_predictor.model.human_model.n_states]),
                         pred_human_x=human_state_traj,
                         pred_human_var=human_var_traj,
-                        # filt_cov_mat=self.kalman_predictor.kalman_filter.P
                     )
 
                 # Publish k-step ahead predicted state and variance

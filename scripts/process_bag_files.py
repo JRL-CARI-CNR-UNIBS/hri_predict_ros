@@ -6,13 +6,13 @@ import rosbag
 import sys
 import time
 
-RATE = 10
+RATE = 0.08 # Hz
 MAX_FOLDER_SIZE = 10e9 # Bytes
 
 # Create a RosPack object
 rospack = rospkg.RosPack()
 
-# Get the path to the package this script is in
+# Get the path to the package this script is ins
 package_path = rospack.get_path('hri_predict_ros')
 
 # Paths to the ROS node launch files and bag files
@@ -20,7 +20,10 @@ ros_node_launch_file = os.path.join(package_path, 'launch','predictor_bringup.la
 
 npz_dir = os.path.join(package_path, 'logs', 'npz')
 bag_dir = os.path.join(package_path, 'logs', 'bag')
-bag_files = [os.path.join(bag_dir, filename) for filename in os.listdir(bag_dir)]
+# bag_files = [os.path.join(bag_dir, filename) for filename in os.listdir(bag_dir)]
+bag_files = [os.path.join(bag_dir, 'test_offline_simple_sub_8.bag'),
+             os.path.join(bag_dir, 'test_offline_simple_sub_9.bag'),
+]
 
 def get_bag_length(bag_file):
     with rosbag.Bag(bag_file, 'r') as bag:

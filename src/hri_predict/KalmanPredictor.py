@@ -187,6 +187,15 @@ class KalmanPredictor:
         self.model.set_human_state(self.kalman_filter.x[:self.model.human_model.n_states])
         self.model.set_robot_state(self.kalman_filter.x[self.model.human_model.n_states:])
 
+        # Clip the human state to the limits
+        self.kalman_filter.x[self.model.human_model.v_idx] = np.clip(self.kalman_filter.x[self.model.human_model.v_idx],
+                                                                     self.model.human_model.v_min,
+                                                                     self.model.human_model.v_max)
+        self.kalman_filter.x[self.model.human_model.a_idx] = np.clip(self.kalman_filter.x[self.model.human_model.a_idx],
+                                                                     self.model.human_model.a_min,
+                                                                     self.model.human_model.a_max)
+        self.model.set_human_state(self.kalman_filter.x[:self.model.human_model.n_states])
+
 
     def update(self, z: np.ndarray):
         # print("[KalmanPredictor::update] Updating...")
