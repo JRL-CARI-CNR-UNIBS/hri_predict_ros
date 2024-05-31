@@ -524,7 +524,7 @@ class Predictor:
                             dump_to_file: bool=False,
                             plot_covariance: bool=False,
                             human_init_variance: dict={},
-                            robot_init_variance: dict={}) -> None:
+                            robot_init_variance: dict={}):
 
         predict_args = {'t': t, 'u': self.kalman_predictor.model.human_model.compute_control_action()}
         timestamp=rospy.Time.now()
@@ -593,48 +593,48 @@ class Predictor:
                 else:
                     rospy.logwarn("Unknown error. Skipping update step.")
                 
-                # k-step ahead prediction of human_robot_system state
-                pred_x_mean, pred_x_var = self.kalman_predictor.k_step_predict(**predict_args)
+                # # k-step ahead prediction of human_robot_system state
+                # pred_x_mean, pred_x_var = self.kalman_predictor.k_step_predict(**predict_args)
 
-                # Select the sequence of predicted states and variances ONLY for the HUMAN agent
-                human_state_traj = pred_x_mean[:self.kalman_predictor.model.human_model.n_states]
-                human_var_traj = pred_x_var[:self.kalman_predictor.model.human_model.n_states]
+                # # Select the sequence of predicted states and variances ONLY for the HUMAN agent
+                # human_state_traj = pred_x_mean[:self.kalman_predictor.model.human_model.n_states]
+                # human_var_traj = pred_x_var[:self.kalman_predictor.model.human_model.n_states]
 
-                # Plot the covariance matrix P as a heatmap
-                if plot_covariance:
-                    self.plot_cov_matrix(iter)
+                # # Plot the covariance matrix P as a heatmap
+                # if plot_covariance:
+                #     self.plot_cov_matrix(iter)
 
-                # Dump the sequence of predicted states and variances for the human agent to a file
-                if dump_to_file:
-                    np.savez_compressed(
-                        os.path.join(logs_dir, f'iter_{iter}.npz'),
-                        timestamp=timestamp.to_sec(),
-                        human_meas_pos=self.human_meas,
-                        human_filt_x=self.kalman_predictor.kalman_filter.x[:self.kalman_predictor.model.human_model.n_states],
-                        human_filt_var=np.diag(self.kalman_predictor.kalman_filter.P[:self.kalman_predictor.model.human_model.n_states]),
-                        pred_human_x=human_state_traj,
-                        pred_human_var=human_var_traj,
-                    )
+                # # Dump the sequence of predicted states and variances for the human agent to a file
+                # if dump_to_file:
+                #     np.savez_compressed(
+                #         os.path.join(logs_dir, f'iter_{iter}.npz'),
+                #         timestamp=timestamp.to_sec(),
+                #         human_meas_pos=self.human_meas,
+                #         human_filt_x=self.kalman_predictor.kalman_filter.x[:self.kalman_predictor.model.human_model.n_states],
+                #         human_filt_var=np.diag(self.kalman_predictor.kalman_filter.P[:self.kalman_predictor.model.human_model.n_states]),
+                #         pred_human_x=human_state_traj,
+                #         pred_human_var=human_var_traj,
+                #     )
 
-                # Publish k-step ahead predicted state and variance
-                self.publish_future_traj(human_state_traj,
-                                        self.pred_state_pub,
-                                        self.pred_state_pub_pj,
-                                        timestamp,
-                                        self.kalman_predictor.predict_steps)
-                self.publish_future_traj(human_var_traj,
-                                        self.pred_variance_pub,
-                                        self.pred_variance_pub_pj,
-                                        timestamp,
-                                        self.kalman_predictor.predict_steps)
-                self.publish_future_traj_stdDev(human_state_traj,
-                                                human_var_traj,
-                                                self.pred_state_lcl_pub,
-                                                self.pred_state_ucl_pub,
-                                                self.pred_state_lcl_pub_pj,
-                                                self.pred_state_ucl_pub_pj,
-                                                timestamp,
-                                                self.kalman_predictor.predict_steps)
+                # # Publish k-step ahead predicted state and variance
+                # self.publish_future_traj(human_state_traj,
+                #                         self.pred_state_pub,
+                #                         self.pred_state_pub_pj,
+                #                         timestamp,
+                #                         self.kalman_predictor.predict_steps)
+                # self.publish_future_traj(human_var_traj,
+                #                         self.pred_variance_pub,
+                #                         self.pred_variance_pub_pj,
+                #                         timestamp,
+                #                         self.kalman_predictor.predict_steps)
+                # self.publish_future_traj_stdDev(human_state_traj,
+                #                                 human_var_traj,
+                #                                 self.pred_state_lcl_pub,
+                #                                 self.pred_state_ucl_pub,
+                #                                 self.pred_state_lcl_pub_pj,
+                #                                 self.pred_state_ucl_pub_pj,
+                #                                 timestamp,
+                #                                 self.kalman_predictor.predict_steps)
 
         else:
             rospy.logwarn(f"Skeleton is absent for more than {self.max_steps_skeleton_absent} steps.")

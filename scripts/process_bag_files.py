@@ -21,8 +21,12 @@ ros_node_launch_file = os.path.join(package_path, 'launch','predictor_bringup.la
 npz_dir = os.path.join(package_path, 'logs', 'npz')
 bag_dir = os.path.join(package_path, 'logs', 'bag')
 # bag_files = [os.path.join(bag_dir, filename) for filename in os.listdir(bag_dir)]
-bag_files = [os.path.join(bag_dir, 'test_offline_simple_sub_8.bag'),
+bag_files = [os.path.join(bag_dir, 'test_offline_simple_sub_8.bag'), # REACHED sub 8 but INCOMPLETE -> RERUN
              os.path.join(bag_dir, 'test_offline_simple_sub_9.bag'),
+             os.path.join(bag_dir, 'test_offline_simple_sub_10.bag'),
+             os.path.join(bag_dir, 'test_offline_simple_sub_11.bag'),
+             os.path.join(bag_dir, 'test_offline_simple_sub_12.bag'),
+             os.path.join(bag_dir, 'test_offline_simple_sub_13.bag'),
 ]
 
 def get_bag_length(bag_file):

@@ -7,15 +7,15 @@ human_n_kpts: 18
 human_noisy_model: True
 human_noisy_measure: True
 human_meas_variance: # Measurement noise on the position of each human keypoint (Hip: all keypoints have the same variance)
-  x: 0.00025 # Hip: 3-sigma (99.5%) = 0.15 m ==> sigma 0 0.05 m ==> var = (0.05)^2 m^2
-  y: 0.00025
-  z: 0.00025
+  x: 0.0025 # Hip: 3-sigma (99.5%) = 0.15 m ==> sigma 0.05 m ==> var = (0.05)^2 m^2
+  y: 0.0025
+  z: 0.0025
 human_model_variance: # Model uncertainty for each human DoF
-  pos: 0.0 # p_dot = v (exact)
-  vel: 0.0 # v_dot = a (exact)
-  acc: 0.5  # a_dot = u (u = 0 is very uncertain ==> add variance here)
+  pos: 0.0 # p_dot = v (exact) # NOT USED
+  vel: 0.0 # v_dot = a (exact) # NOT USED
+  acc: 0.1 # a_dot = u (u = 0 is very uncertain ==> add variance here)
 human_init_variance: # [pos, vel, acc] for each human DoF (3-sigma)
-  pos: 0.00025   # Hip: 3-sigma (99.5%) = 0.15 m ==> sigma 0 0.05 m ==> var = (0.05)^2 m^2
+  pos: 0.0025   # Hip: 3-sigma (99.5%) = 0.15 m ==> sigma 0 0.05 m ==> var = (0.05)^2 m^2
   vel: 0.02844   # Hip: no keypoint moves faster than 1.6 m/s ==> 3-sigma (99.5%) = 1.6 m/s ==> var = (1.6/3)^2 m^2/s^2
   acc: 1.1111  # Hip: no keypoint accelerates faster than 10 m/s^2 ==> 3-sigma (99.5%) = 10 m/s^2 ==> var = (10/3)^2 m^2/s^4
 robot_init_variance: # [pos, vel, acc] for each robot DoF
@@ -27,9 +27,9 @@ human_Kd: 1.0
 human_K_repulse: 1.0
 robot_control_law: TRAJ_FOLLOW
 robot_n_dof: 6
-alpha: 0.3
+alpha: 0.1
 beta: 2.0
-kappa: 0.1
+kappa: 0.0
 skeleton_topic: "/zed/zed_node/body_trk/skeletons"
 robot_js_topic: "/ur10/joint_states"                
 predicted_hri_state_topic: "/predicted_hri_state"
@@ -45,8 +45,8 @@ plot_covariance: False
 TF_world_camera: [0.100575, -0.9304, 2.31042, 0.180663, 0.516604, 0.119341, 0.828395] # [x y z qx qy qz qw]
 u_min_human: -100 # not used for CONST_ACC
 u_max_human: 100 # not used for CONST_ACC
-a_min_human: -0.3
-a_max_human: 0.3
-v_min_human: -0.3
-v_max_human: 0.3
+a_min_human: -20.0
+a_max_human: 20.0
+v_min_human: -10.0
+v_max_human: 10.0
 max_time_skeleton_absent: 1.0 # Maximum time in seconds to wait for a skeleton to be detected

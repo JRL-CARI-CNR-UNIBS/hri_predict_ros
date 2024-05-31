@@ -116,7 +116,8 @@ class HumanModel:
 
         # Model uncertainty matrix
         if self.noisy_model:
-            var_human = Q['pos'] # variance for the human model (just take the variance of the position for now)
+            var_human = Q['acc'] # variance for the human model (just take the variance of the acceleration)
+            # (Discrete white noise acceleration model)
             self.Q = Q_discrete_white_noise(dim=3,
                                             dt=self.dt,
                                             var=var_human,
