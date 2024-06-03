@@ -1,0 +1,96 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<root>
+ <tabbed_widget name="Main Window" parent="main_window">
+  <Tab tab_name="tab1" containers="1">
+   <Container>
+    <DockSplitter sizes="0.25;0.25;0.25;0.25" orientation="-" count="4">
+     <DockArea name="...">
+      <plot flip_x="false" flip_y="false" style="LinesAndDots" mode="TimeSeries">
+       <range top="1.166882" left="1716991194.802620" right="1716991320.142157" bottom="0.190668"/>
+       <limitY/>
+       <curve name="/hri_prediction_node/human_filt_pos/poses[4]/position/x" color="#9467bd"/>
+       <curve name="/hri_prediction_node/human_meas_pos/poses[4]/position/x" color="#17becf"/>
+       <curve name="/hri_prediction_node/predicted_hri_state/pj/points[0]/positions[12]" color="#bcbd22"/>
+       <curve name="/hri_prediction_node/predicted_hri_state/lcl/pj/points[0]/positions[12]" color="#1f77b4"/>
+       <curve name="/hri_prediction_node/predicted_hri_state/ucl/pj/points[0]/positions[12]" color="#d62728"/>
+      </plot>
+     </DockArea>
+     <DockArea name="...">
+      <plot flip_x="false" flip_y="false" style="LinesAndDots" mode="TimeSeries">
+       <range top="0.312571" left="1716991194.802620" right="1716991320.142157" bottom="-0.215415"/>
+       <limitY/>
+       <curve name="/hri_prediction_node/human_filt_acc/poses[4]/position/x" color="#d62728"/>
+       <curve name="/hri_prediction_node/human_filt_vel/poses[4]/position/x" color="#1ac938"/>
+      </plot>
+     </DockArea>
+     <DockArea name="...">
+      <plot flip_x="false" flip_y="false" style="LinesAndDots" mode="TimeSeries">
+       <range top="1.070939" left="1716991194.802620" right="1716991320.142157" bottom="-0.841812"/>
+       <limitY/>
+       <curve name="/hri_prediction_node/human_filt_pos/poses[0]/position/y" color="#41794b"/>
+       <curve name="/hri_prediction_node/human_meas_pos/poses[0]/position/y" color="#ff7f0e"/>
+       <curve name="/hri_prediction_node/predicted_hri_state/pj/points[0]/positions[1]" color="#1ac938"/>
+       <curve name="/hri_prediction_node/predicted_hri_state/lcl/pj/points[0]/positions[1]" color="#f14cc1"/>
+       <curve name="/hri_prediction_node/predicted_hri_state/ucl/pj/points[0]/positions[1]" color="#9467bd"/>
+      </plot>
+     </DockArea>
+     <DockArea name="...">
+      <plot flip_x="false" flip_y="false" style="Lines" mode="TimeSeries">
+       <range top="0.315000" left="1716991194.802620" right="1716991320.142157" bottom="-0.315000"/>
+       <limitY/>
+       <curve name="/hri_prediction_node/human_filt_vel/poses[0]/position/y" color="#1f77b4"/>
+       <curve name="/hri_prediction_node/human_filt_acc/poses[0]/position/y" color="#d62728"/>
+      </plot>
+     </DockArea>
+    </DockSplitter>
+   </Container>
+  </Tab>
+  <currentTabIndex index="0"/>
+ </tabbed_widget>
+ <use_relative_time_offset enabled="0"/>
+ <!-- - - - - - - - - - - - - - - -->
+ <!-- - - - - - - - - - - - - - - -->
+ <Plugins>
+  <plugin ID="DataLoad CSV">
+   <parameters time_axis="" delimiter="0"/>
+  </plugin>
+  <plugin ID="DataLoad MCAP"/>
+  <plugin ID="DataLoad ROS bags">
+   <use_header_stamp value="false"/>
+   <discard_large_arrays value="true"/>
+   <max_array_size value="100"/>
+   <boolean_strings_to_number value="true"/>
+   <remove_suffix_from_strings value="true"/>
+   <selected_topics value=""/>
+  </plugin>
+  <plugin ID="DataLoad ULog"/>
+  <plugin ID="ROS Topic Subscriber">
+   <use_header_stamp value="true"/>
+   <discard_large_arrays value="true"/>
+   <max_array_size value="1000"/>
+   <boolean_strings_to_number value="true"/>
+   <remove_suffix_from_strings value="true"/>
+   <selected_topics value="/hri_prediction_node/human_filt_acc;/hri_prediction_node/human_filt_pos;/hri_prediction_node/human_filt_vel;/hri_prediction_node/human_meas_pos;/hri_prediction_node/predicted_hri_state;/hri_prediction_node/predicted_hri_state/lcl;/hri_prediction_node/predicted_hri_state/pj;/hri_prediction_node/predicted_hri_state/pj/lcl;/hri_prediction_node/predicted_hri_state/pj/ucl;/hri_prediction_node/predicted_hri_state/ucl;/hri_prediction_node/predicted_hri_variance;/hri_prediction_node/predicted_hri_variance/pj"/>
+  </plugin>
+  <plugin ID="UDP Server"/>
+  <plugin ID="WebSocket Server"/>
+  <plugin ID="ZMQ Subscriber"/>
+  <plugin ID="Fast Fourier Transform"/>
+  <plugin ID="Quaternion to RPY"/>
+  <plugin ID="Reactive Script Editor">
+   <library code="--[[ Helper function to create a ScatterXY series from arrays.&#xa;&#xa; series_name: name of the created ScatterXY series&#xa; prefix:      prefix of the timeseries, before the index of the array&#xa; suffix_X:   suffix to complete the name of the series containing the X value.&#xa;             if [nil], the index of the array will be used.&#xa; suffix_Y:   suffix to complete the name of the series containing the Y value&#xa; timestamp:   usually the tracker_time variable&#xa;              &#xa; Example:&#xa; &#xa; Assuming we have multiple series in the form:&#xa; &#xa;   /trajectory/node.{N}/position/x&#xa;   /trajectory/node.{N}/position/y&#xa;   &#xa; where {N} is the index of the array (integer). We can create a reactive series from the array with:&#xa; &#xa;   CreateSeriesFromArray( &quot;my_trajectory&quot;, &quot;/trajectory/node&quot;,  &quot;position/x&quot;, &quot;position/y&quot;, tracker_time );&#xa;]]--&#xa;&#xa;function CreateSeriesFromArray( series_name, prefix, suffix_X, suffix_Y, timestamp )&#xa;  --- create a new series or overwite the previous one&#xa;  new_series = MutableScatterXY.new(series_name)&#xa;  &#xa;  --- Append points to new_series&#xa;  index = 0&#xa;  while(true) do&#xa;&#xa;    x = index;&#xa;    -- if not nil, get the X coordinate from a series&#xa;    if suffix_X ~= nil then &#xa;      series_x = TimeseriesView.find( string.format( &quot;%s.%d/%s&quot;, prefix, index, suffix_X) )&#xa;      if series_x == nil then break end&#xa;      x = series_x:atTime(timestamp)&#x9; &#xa;    end&#xa;    &#xa;    series_y = TimeseriesView.find( string.format( &quot;%s.%d/%s&quot;, prefix, index, suffix_Y) )&#xa;    if series_x == nil then break end &#xa;    y = series_y:atTime(timestamp)&#xa;    &#xa;    new_series:push_back(x,y)&#xa;    index = index+1&#xa;  end&#xa;end&#xa;"/>
+   <scripts/>
+  </plugin>
+  <plugin ID="CSV Exporter"/>
+  <plugin ID="ROS /rosout Visualization"/>
+  <plugin ID="ROS Topic Re-Publisher"/>
+ </Plugins>
+ <!-- - - - - - - - - - - - - - - -->
+ <previouslyLoaded_Datafiles/>
+ <previouslyLoaded_Streamer name="ROS Topic Subscriber"/>
+ <!-- - - - - - - - - - - - - - - -->
+ <customMathEquations/>
+ <snippets/>
+ <!-- - - - - - - - - - - - - - - -->
+</root>
+
