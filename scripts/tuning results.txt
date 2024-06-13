@@ -1,0 +1,1428 @@
+===========================
+PARAMETERS
+===========================
+train_subjects = train_subjects # train_subjects = ['sub_9', 'sub_4', 'sub_11', 'sub_7', 'sub_8', 'sub_10', 'sub_6']
+velocities = ['FAST'] # worst-case scenario
+tasks = TASK_NAMES # TASK_NAMES = ['PICK-&-PLACE', 'WALKING', 'PASSING-BY']
+pred_horizons = [5] # worst-case scenario
+dt = 0.1
+predict_k_steps = True
+n_kpts = 18
+n_var_per_dof = 3       # position, velocity, acceleration
+n_dim_per_kpt = 3       # x, y, z
+max_time_no_meas = pd.Timedelta(seconds=1.0)
+NUM_FILTERS_IN_BANK = 3
+
+# Initial values for the parameters
+var_r = 0.0025          # [paper: r_y] Hip: 3-sigma (99.5%) = 0.15 m ==> sigma 0.05 m ==> var = (0.05)^2 m^2
+var_q = 0.03            # [paper: q_a] a_dot = u (u = 0 is very uncertain ==> add variance here)
+var_P_pos = var_r       # [paper: p_y] Set equal to the measurement noise since the state is initialized with the measurement
+var_P_vel = 0.02844     # [paper: p_v] Hip: no keypoint moves faster than 1.6 m/s ==> 3-sigma (99.5%) = 1.6 m/s ==> var = (1.6/3)^2 m^2/s^2
+var_P_acc = 1.1111      # [paper: p_a] Hip: no keypoint accelerates faster than 10 m/s^2 ==> 3-sigma (99.5%) = 10 m/s^2 ==> var = (10/3)^2 m^2/s^4
+
+M = np.array([[0.55, 0.15, 0.30], # transition matrix for the IMM estimator
+              [0.15, 0.75, 0.10],
+              [0.60, 0.30, 0.10]])
+
+mu = np.array([0.55, 0.40, 0.05]) # initial mode probabilities for the IMM estimator
+
+# Tuning parameters
+iter_P = 1
+iter_q = 10
+decrement_factor_q = 0.75
+decrement_factor_P = 0.5
+
+===========================
+TUNING LOOP
+===========================
+Iteration 1/10 for var_q and 1/1 for var_P
+Current values: var_q = 0.03, var_P_acc = 1.1111
+Processing sub_9 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:32:04.856000 to 2024-05-30 12:32:34.380000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.504439552
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 296/296 [01:21<00:00,  3.65it/s]
+Mean loop frequency: 3.68 Hz
+Processed sub_9 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_9 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:32:46.007000 to 2024-05-30 12:33:01.994000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:15.925924352
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 160/160 [00:43<00:00,  3.64it/s]
+Mean loop frequency: 3.69 Hz
+Processed sub_9 - FAST - WALKING for 5 steps ahead.
+Processing sub_9 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:33:15.791000 to 2024-05-30 12:33:36.428000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.609293824
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 207/207 [00:08<00:00, 23.86it/s]
+Mean loop frequency: 23.87 Hz
+Processed sub_9 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_4 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-27 10:22:08.148000 to 2024-05-27 10:22:32.519000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:24.279510016
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 243/243 [01:07<00:00,  3.58it/s]
+Mean loop frequency: 3.62 Hz
+Processed sub_4 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_4 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-27 10:22:40.807000 to 2024-05-27 10:22:53.038000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:12.188413696
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 122/122 [00:34<00:00,  3.56it/s]
+Mean loop frequency: 3.58 Hz
+Processed sub_4 - FAST - WALKING for 5 steps ahead.
+Processing sub_4 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-27 10:23:02.464000 to 2024-05-27 10:23:16.869000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:14.345150464
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 144/144 [00:05<00:00, 25.61it/s]
+Mean loop frequency: 25.63 Hz
+Processed sub_4 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_11 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:16:10.235000 to 2024-05-30 14:16:40.169000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.906913280
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 300/300 [01:18<00:00,  3.83it/s]
+Mean loop frequency: 3.86 Hz
+Processed sub_11 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_11 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:16:52.713000 to 2024-05-30 14:17:09.369000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:16.574949376
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 166/166 [00:44<00:00,  3.71it/s]
+Mean loop frequency: 3.74 Hz
+Processed sub_11 - FAST - WALKING for 5 steps ahead.
+Processing sub_11 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:17:23.261000 to 2024-05-30 14:17:44.505000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:21.145248768
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 212/212 [00:10<00:00, 19.51it/s]
+Mean loop frequency: 19.52 Hz
+Processed sub_11 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_7 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-29 16:06:16.835000 to 2024-05-29 16:06:45.974000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.074720
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 291/291 [01:16<00:00,  3.79it/s]
+Mean loop frequency: 3.83 Hz
+Processed sub_7 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_7 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-29 16:06:57.594000 to 2024-05-29 16:07:13.431000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:15.752914944
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 158/158 [00:41<00:00,  3.82it/s]
+Mean loop frequency: 3.85 Hz
+Processed sub_7 - FAST - WALKING for 5 steps ahead.
+Processing sub_7 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-29 16:07:26.762000 to 2024-05-29 16:07:47.146000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.344024320
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 204/204 [00:14<00:00, 13.61it/s]
+Mean loop frequency: 13.62 Hz
+Processed sub_7 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_8 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:16:54.540000 to 2024-05-30 12:17:23.776000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.204252928
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 293/293 [01:21<00:00,  3.61it/s]
+Mean loop frequency: 3.64 Hz
+Processed sub_8 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_8 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:17:35.603000 to 2024-05-30 12:17:51.403000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:15.730817536
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 158/158 [00:41<00:00,  3.79it/s]
+Mean loop frequency: 3.82 Hz
+Processed sub_8 - FAST - WALKING for 5 steps ahead.
+Processing sub_8 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:18:05.008000 to 2024-05-30 12:18:25.195000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.164067584
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 202/202 [00:10<00:00, 18.89it/s]
+Mean loop frequency: 18.90 Hz
+Processed sub_8 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_10 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:46:47.896000 to 2024-05-30 14:47:17.240000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.309116160
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 294/294 [01:19<00:00,  3.70it/s]
+Mean loop frequency: 3.73 Hz
+Processed sub_10 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_10 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:47:29.312000 to 2024-05-30 14:47:45.496000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:16.163269632
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 162/162 [00:43<00:00,  3.77it/s]
+Mean loop frequency: 3.80 Hz
+Processed sub_10 - FAST - WALKING for 5 steps ahead.
+Processing sub_10 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:47:59.453000 to 2024-05-30 14:48:19.999000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.496087040
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 205/205 [00:16<00:00, 12.53it/s]
+Mean loop frequency: 12.54 Hz
+Processed sub_10 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_6 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-27 11:30:46.840000 to 2024-05-27 11:31:11.038000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:24.122764032
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 242/242 [01:10<00:00,  3.41it/s]
+Mean loop frequency: 3.44 Hz
+Processed sub_6 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_6 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-27 11:31:19.185000 to 2024-05-27 11:31:31.343000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:12.061261824
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 121/121 [00:34<00:00,  3.51it/s]
+Mean loop frequency: 3.55 Hz
+Processed sub_6 - FAST - WALKING for 5 steps ahead.
+Processing sub_6 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-27 11:31:40.568000 to 2024-05-27 11:31:54.803000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:14.211811840
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 143/143 [00:10<00:00, 13.92it/s]
+Mean loop frequency: 13.93 Hz
+Processed sub_6 - FAST - PASSING-BY for 5 steps ahead.
+Average error (CA): -0.000439, -0.011276, -0.063457
+Average error (IMM): -0.000105, -0.017243, -0.051208
+Average RMSE (CA): 0.113305, 0.123543, 0.270788
+Average RMSE (IMM): 0.077811, 0.116392, 0.257854
+Average std (CA): 0.1133, 0.1230, 0.2631
+Average std (IMM): 0.0778, 0.1150, 0.2527
+Average percentage (CA): 85.0691, 78.7563, 85.5280
+Average percentage (IMM): 86.5870, 79.0824, 85.8557
+===============================================
+
+
+Iteration 2/10 for var_q and 1/1 for var_P
+Current values: var_q = 0.0225, var_P_acc = 1.1111
+Processing sub_9 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:32:04.856000 to 2024-05-30 12:32:34.380000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.504439552
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 296/296 [01:24<00:00,  3.51it/s]
+Mean loop frequency: 3.54 Hz
+Processed sub_9 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_9 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:32:46.007000 to 2024-05-30 12:33:01.994000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:15.925924352
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 160/160 [01:04<00:00,  2.48it/s]
+Mean loop frequency: 2.50 Hz
+Processed sub_9 - FAST - WALKING for 5 steps ahead.
+Processing sub_9 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:33:15.791000 to 2024-05-30 12:33:36.428000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.609293824
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 207/207 [00:11<00:00, 18.10it/s]
+Mean loop frequency: 18.11 Hz
+Processed sub_9 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_4 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-27 10:22:08.148000 to 2024-05-27 10:22:32.519000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:24.279510016
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 243/243 [01:29<00:00,  2.70it/s]
+Mean loop frequency: 2.72 Hz
+Processed sub_4 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_4 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-27 10:22:40.807000 to 2024-05-27 10:22:53.038000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:12.188413696
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 122/122 [00:46<00:00,  2.64it/s]
+Mean loop frequency: 2.66 Hz
+Processed sub_4 - FAST - WALKING for 5 steps ahead.
+Processing sub_4 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-27 10:23:02.464000 to 2024-05-27 10:23:16.869000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:14.345150464
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 144/144 [00:11<00:00, 12.16it/s]
+Mean loop frequency: 12.18 Hz
+Processed sub_4 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_11 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:16:10.235000 to 2024-05-30 14:16:40.169000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.906913280
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 300/300 [01:46<00:00,  2.81it/s]
+Mean loop frequency: 2.83 Hz
+Processed sub_11 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_11 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:16:52.713000 to 2024-05-30 14:17:09.369000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:16.574949376
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 166/166 [00:47<00:00,  3.49it/s]
+Mean loop frequency: 3.52 Hz
+Processed sub_11 - FAST - WALKING for 5 steps ahead.
+Processing sub_11 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:17:23.261000 to 2024-05-30 14:17:44.505000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:21.145248768
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 212/212 [00:13<00:00, 16.03it/s]
+Mean loop frequency: 16.03 Hz
+Processed sub_11 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_7 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-29 16:06:16.835000 to 2024-05-29 16:06:45.974000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.074720
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 291/291 [01:20<00:00,  3.60it/s]
+Mean loop frequency: 3.63 Hz
+Processed sub_7 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_7 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-29 16:06:57.594000 to 2024-05-29 16:07:13.431000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:15.752914944
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 158/158 [00:48<00:00,  3.28it/s]
+Mean loop frequency: 3.31 Hz
+Processed sub_7 - FAST - WALKING for 5 steps ahead.
+Processing sub_7 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-29 16:07:26.762000 to 2024-05-29 16:07:47.146000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.344024320
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 204/204 [00:16<00:00, 12.14it/s]
+Mean loop frequency: 12.14 Hz
+Processed sub_7 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_8 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:16:54.540000 to 2024-05-30 12:17:23.776000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.204252928
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 293/293 [01:26<00:00,  3.38it/s]
+Mean loop frequency: 3.41 Hz
+Processed sub_8 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_8 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:17:35.603000 to 2024-05-30 12:17:51.403000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:15.730817536
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 158/158 [00:44<00:00,  3.52it/s]
+Mean loop frequency: 3.55 Hz
+Processed sub_8 - FAST - WALKING for 5 steps ahead.
+Processing sub_8 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:18:05.008000 to 2024-05-30 12:18:25.195000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.164067584
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 202/202 [00:10<00:00, 20.09it/s]
+Mean loop frequency: 20.10 Hz
+Processed sub_8 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_10 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:46:47.896000 to 2024-05-30 14:47:17.240000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.309116160
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 294/294 [01:27<00:00,  3.37it/s]
+Mean loop frequency: 3.40 Hz
+Processed sub_10 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_10 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:47:29.312000 to 2024-05-30 14:47:45.496000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:16.163269632
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 162/162 [00:52<00:00,  3.07it/s]
+Mean loop frequency: 3.09 Hz
+Processed sub_10 - FAST - WALKING for 5 steps ahead.
+Processing sub_10 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:47:59.453000 to 2024-05-30 14:48:19.999000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.496087040
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 205/205 [00:15<00:00, 13.25it/s]
+Mean loop frequency: 13.25 Hz
+Processed sub_10 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_6 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-27 11:30:46.840000 to 2024-05-27 11:31:11.038000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:24.122764032
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 242/242 [01:14<00:00,  3.25it/s]
+Mean loop frequency: 3.28 Hz
+Processed sub_6 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_6 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-27 11:31:19.185000 to 2024-05-27 11:31:31.343000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:12.061261824
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 121/121 [00:37<00:00,  3.21it/s]
+Mean loop frequency: 3.23 Hz
+Processed sub_6 - FAST - WALKING for 5 steps ahead.
+Processing sub_6 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-27 11:31:40.568000 to 2024-05-27 11:31:54.803000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:14.211811840
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 143/143 [00:10<00:00, 13.65it/s]
+Mean loop frequency: 13.66 Hz
+Processed sub_6 - FAST - PASSING-BY for 5 steps ahead.
+Average error (CA): -0.000458, -0.011216, -0.063472
+Average error (IMM): -0.000064, -0.016985, -0.050766
+Average RMSE (CA): 0.110652, 0.121785, 0.270903
+Average RMSE (IMM): 0.076087, 0.115330, 0.257954
+Average std (CA): 0.1106, 0.1212, 0.2632
+Average std (IMM): 0.0761, 0.1140, 0.2529
+Average percentage (CA): 84.0182, 77.1020, 84.9871
+Average percentage (IMM): 85.5030, 77.9410, 84.8499
+===============================================
+
+
+Iteration 3/10 for var_q and 1/1 for var_P
+Current values: var_q = 0.016875, var_P_acc = 1.1111
+Processing sub_9 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:32:04.856000 to 2024-05-30 12:32:34.380000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.504439552
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 296/296 [01:27<00:00,  3.37it/s]
+Mean loop frequency: 3.40 Hz
+Processed sub_9 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_9 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:32:46.007000 to 2024-05-30 12:33:01.994000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:15.925924352
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 160/160 [00:46<00:00,  3.42it/s]
+Mean loop frequency: 3.45 Hz
+Processed sub_9 - FAST - WALKING for 5 steps ahead.
+Processing sub_9 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:33:15.791000 to 2024-05-30 12:33:36.428000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.609293824
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 207/207 [00:10<00:00, 18.95it/s]
+Mean loop frequency: 18.95 Hz
+Processed sub_9 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_4 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-27 10:22:08.148000 to 2024-05-27 10:22:32.519000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:24.279510016
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 243/243 [01:14<00:00,  3.25it/s]
+Mean loop frequency: 3.27 Hz
+Processed sub_4 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_4 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-27 10:22:40.807000 to 2024-05-27 10:22:53.038000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:12.188413696
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 122/122 [00:32<00:00,  3.70it/s]
+Mean loop frequency: 3.73 Hz
+Processed sub_4 - FAST - WALKING for 5 steps ahead.
+Processing sub_4 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-27 10:23:02.464000 to 2024-05-27 10:23:16.869000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:14.345150464
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 144/144 [00:06<00:00, 23.73it/s]
+Mean loop frequency: 23.75 Hz
+Processed sub_4 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_11 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:16:10.235000 to 2024-05-30 14:16:40.169000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.906913280
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 300/300 [01:25<00:00,  3.52it/s]
+Mean loop frequency: 3.55 Hz
+Processed sub_11 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_11 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:16:52.713000 to 2024-05-30 14:17:09.369000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:16.574949376
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 166/166 [00:48<00:00,  3.39it/s]
+Mean loop frequency: 3.42 Hz
+Processed sub_11 - FAST - WALKING for 5 steps ahead.
+Processing sub_11 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:17:23.261000 to 2024-05-30 14:17:44.505000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:21.145248768
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 212/212 [00:13<00:00, 16.10it/s]
+Mean loop frequency: 16.11 Hz
+Processed sub_11 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_7 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-29 16:06:16.835000 to 2024-05-29 16:06:45.974000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.074720
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 291/291 [01:22<00:00,  3.51it/s]
+Mean loop frequency: 3.55 Hz
+Processed sub_7 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_7 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-29 16:06:57.594000 to 2024-05-29 16:07:13.431000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:15.752914944
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 158/158 [00:47<00:00,  3.35it/s]
+Mean loop frequency: 3.38 Hz
+Processed sub_7 - FAST - WALKING for 5 steps ahead.
+Processing sub_7 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-29 16:07:26.762000 to 2024-05-29 16:07:47.146000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.344024320
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 204/204 [00:16<00:00, 12.02it/s]
+Mean loop frequency: 12.02 Hz
+Processed sub_7 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_8 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:16:54.540000 to 2024-05-30 12:17:23.776000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.204252928
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 293/293 [01:28<00:00,  3.32it/s]
+Mean loop frequency: 3.34 Hz
+Processed sub_8 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_8 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:17:35.603000 to 2024-05-30 12:17:51.403000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:15.730817536
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 158/158 [00:46<00:00,  3.38it/s]
+Mean loop frequency: 3.40 Hz
+Processed sub_8 - FAST - WALKING for 5 steps ahead.
+Processing sub_8 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:18:05.008000 to 2024-05-30 12:18:25.195000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.164067584
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 202/202 [00:10<00:00, 19.72it/s]
+Mean loop frequency: 19.73 Hz
+Processed sub_8 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_10 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:46:47.896000 to 2024-05-30 14:47:17.240000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.309116160
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 294/294 [01:27<00:00,  3.37it/s]
+Mean loop frequency: 3.40 Hz
+Processed sub_10 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_10 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:47:29.312000 to 2024-05-30 14:47:45.496000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:16.163269632
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 162/162 [00:45<00:00,  3.58it/s]
+Mean loop frequency: 3.61 Hz
+Processed sub_10 - FAST - WALKING for 5 steps ahead.
+Processing sub_10 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:47:59.453000 to 2024-05-30 14:48:19.999000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.496087040
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 205/205 [00:13<00:00, 14.85it/s]
+Mean loop frequency: 14.85 Hz
+Processed sub_10 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_6 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-27 11:30:46.840000 to 2024-05-27 11:31:11.038000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:24.122764032
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 242/242 [01:10<00:00,  3.41it/s]
+Mean loop frequency: 3.44 Hz
+Processed sub_6 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_6 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-27 11:31:19.185000 to 2024-05-27 11:31:31.343000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:12.061261824
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 121/121 [00:37<00:00,  3.22it/s]
+Mean loop frequency: 3.24 Hz
+Processed sub_6 - FAST - WALKING for 5 steps ahead.
+Processing sub_6 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-27 11:31:40.568000 to 2024-05-27 11:31:54.803000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:14.211811840
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 143/143 [00:10<00:00, 14.25it/s]
+Mean loop frequency: 14.26 Hz
+Processed sub_6 - FAST - PASSING-BY for 5 steps ahead.
+Average error (CA): -0.000491, -0.011170, -0.063471
+Average error (IMM): -0.000013, -0.016677, -0.050606
+Average RMSE (CA): 0.107996, 0.120247, 0.271019
+Average RMSE (IMM): 0.074264, 0.114387, 0.257783
+Average std (CA): 0.1080, 0.1197, 0.2634
+Average std (IMM): 0.0743, 0.1131, 0.2527
+Average percentage (CA): 82.9844, 75.3951, 84.4527
+Average percentage (IMM): 84.5693, 76.5514, 84.0908
+===============================================
+
+
+Iteration 4/10 for var_q and 1/1 for var_P
+Current values: var_q = 0.01265625, var_P_acc = 1.1111
+Processing sub_9 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:32:04.856000 to 2024-05-30 12:32:34.380000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.504439552
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 296/296 [01:24<00:00,  3.50it/s]
+Mean loop frequency: 3.53 Hz
+Processed sub_9 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_9 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:32:46.007000 to 2024-05-30 12:33:01.994000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:15.925924352
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 160/160 [00:44<00:00,  3.61it/s]
+Mean loop frequency: 3.65 Hz
+Processed sub_9 - FAST - WALKING for 5 steps ahead.
+Processing sub_9 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:33:15.791000 to 2024-05-30 12:33:36.428000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.609293824
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 207/207 [00:11<00:00, 17.67it/s]
+Mean loop frequency: 17.68 Hz
+Processed sub_9 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_4 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-27 10:22:08.148000 to 2024-05-27 10:22:32.519000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:24.279510016
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 243/243 [01:08<00:00,  3.53it/s]
+Mean loop frequency: 3.57 Hz
+Processed sub_4 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_4 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-27 10:22:40.807000 to 2024-05-27 10:22:53.038000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:12.188413696
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 122/122 [00:32<00:00,  3.75it/s]
+Mean loop frequency: 3.78 Hz
+Processed sub_4 - FAST - WALKING for 5 steps ahead.
+Processing sub_4 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-27 10:23:02.464000 to 2024-05-27 10:23:16.869000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:14.345150464
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 144/144 [00:06<00:00, 21.92it/s]
+Mean loop frequency: 21.94 Hz
+Processed sub_4 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_11 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:16:10.235000 to 2024-05-30 14:16:40.169000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.906913280
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 300/300 [01:27<00:00,  3.42it/s]
+Mean loop frequency: 3.44 Hz
+Processed sub_11 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_11 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:16:52.713000 to 2024-05-30 14:17:09.369000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:16.574949376
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 166/166 [00:45<00:00,  3.63it/s]
+Mean loop frequency: 3.66 Hz
+Processed sub_11 - FAST - WALKING for 5 steps ahead.
+Processing sub_11 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:17:23.261000 to 2024-05-30 14:17:44.505000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:21.145248768
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 212/212 [00:10<00:00, 19.62it/s]
+Mean loop frequency: 19.63 Hz
+Processed sub_11 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_7 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-29 16:06:16.835000 to 2024-05-29 16:06:45.974000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.074720
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 291/291 [01:23<00:00,  3.50it/s]
+Mean loop frequency: 3.53 Hz
+Processed sub_7 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_7 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-29 16:06:57.594000 to 2024-05-29 16:07:13.431000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:15.752914944
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 158/158 [00:44<00:00,  3.56it/s]
+Mean loop frequency: 3.59 Hz
+Processed sub_7 - FAST - WALKING for 5 steps ahead.
+Processing sub_7 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-29 16:07:26.762000 to 2024-05-29 16:07:47.146000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.344024320
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 204/204 [00:17<00:00, 11.61it/s]
+Mean loop frequency: 11.61 Hz
+Processed sub_7 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_8 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:16:54.540000 to 2024-05-30 12:17:23.776000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.204252928
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 293/293 [01:23<00:00,  3.51it/s]
+Mean loop frequency: 3.55 Hz
+Processed sub_8 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_8 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:17:35.603000 to 2024-05-30 12:17:51.403000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:15.730817536
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 158/158 [00:45<00:00,  3.50it/s]
+Mean loop frequency: 3.53 Hz
+Processed sub_8 - FAST - WALKING for 5 steps ahead.
+Processing sub_8 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:18:05.008000 to 2024-05-30 12:18:25.195000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.164067584
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 202/202 [00:09<00:00, 22.19it/s]
+Mean loop frequency: 22.20 Hz
+Processed sub_8 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_10 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:46:47.896000 to 2024-05-30 14:47:17.240000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.309116160
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 294/294 [01:27<00:00,  3.37it/s]
+Mean loop frequency: 3.39 Hz
+Processed sub_10 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_10 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:47:29.312000 to 2024-05-30 14:47:45.496000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:16.163269632
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 162/162 [00:46<00:00,  3.45it/s]
+Mean loop frequency: 3.48 Hz
+Processed sub_10 - FAST - WALKING for 5 steps ahead.
+Processing sub_10 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:47:59.453000 to 2024-05-30 14:48:19.999000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.496087040
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 205/205 [00:13<00:00, 14.99it/s]
+Mean loop frequency: 15.00 Hz
+Processed sub_10 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_6 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-27 11:30:46.840000 to 2024-05-27 11:31:11.038000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:24.122764032
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 242/242 [01:08<00:00,  3.54it/s]
+Mean loop frequency: 3.57 Hz
+Processed sub_6 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_6 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-27 11:31:19.185000 to 2024-05-27 11:31:31.343000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:12.061261824
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 121/121 [00:32<00:00,  3.69it/s]
+Mean loop frequency: 3.75 Hz
+Processed sub_6 - FAST - WALKING for 5 steps ahead.
+Processing sub_6 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-27 11:31:40.568000 to 2024-05-27 11:31:54.803000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:14.211811840
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 143/143 [00:09<00:00, 14.71it/s]
+Mean loop frequency: 14.71 Hz
+Processed sub_6 - FAST - PASSING-BY for 5 steps ahead.
+Average error (CA): -0.000539, -0.011141, -0.063454
+Average error (IMM): 0.000053, -0.016574, -0.050542
+Average RMSE (CA): 0.105331, 0.118954, 0.271129
+Average RMSE (IMM): 0.072642, 0.112977, 0.257459
+Average std (CA): 0.1053, 0.1184, 0.2635
+Average std (IMM): 0.0726, 0.1117, 0.2524
+Average percentage (CA): 81.8981, 73.9085, 83.6776
+Average percentage (IMM): 83.3969, 75.3570, 83.5011
+===============================================
+
+
+Iteration 5/10 for var_q and 1/1 for var_P
+Current values: var_q = 0.0094921875, var_P_acc = 1.1111
+Processing sub_9 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:32:04.856000 to 2024-05-30 12:32:34.380000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.504439552
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 296/296 [01:23<00:00,  3.55it/s]
+Mean loop frequency: 3.58 Hz
+Processed sub_9 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_9 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:32:46.007000 to 2024-05-30 12:33:01.994000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:15.925924352
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 160/160 [00:45<00:00,  3.52it/s]
+Mean loop frequency: 3.55 Hz
+Processed sub_9 - FAST - WALKING for 5 steps ahead.
+Processing sub_9 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:33:15.791000 to 2024-05-30 12:33:36.428000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.609293824
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 207/207 [00:09<00:00, 21.11it/s]
+Mean loop frequency: 21.12 Hz
+Processed sub_9 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_4 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-27 10:22:08.148000 to 2024-05-27 10:22:32.519000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:24.279510016
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 243/243 [01:10<00:00,  3.45it/s]
+Mean loop frequency: 3.48 Hz
+Processed sub_4 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_4 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-27 10:22:40.807000 to 2024-05-27 10:22:53.038000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:12.188413696
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 122/122 [00:34<00:00,  3.58it/s]
+Mean loop frequency: 3.62 Hz
+Processed sub_4 - FAST - WALKING for 5 steps ahead.
+Processing sub_4 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-27 10:23:02.464000 to 2024-05-27 10:23:16.869000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:14.345150464
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 144/144 [00:07<00:00, 19.10it/s]
+Mean loop frequency: 19.12 Hz
+Processed sub_4 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_11 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:16:10.235000 to 2024-05-30 14:16:40.169000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.906913280
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 300/300 [01:23<00:00,  3.61it/s]
+Mean loop frequency: 3.64 Hz
+Processed sub_11 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_11 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:16:52.713000 to 2024-05-30 14:17:09.369000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:16.574949376
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 166/166 [00:48<00:00,  3.45it/s]
+Mean loop frequency: 3.47 Hz
+Processed sub_11 - FAST - WALKING for 5 steps ahead.
+Processing sub_11 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:17:23.261000 to 2024-05-30 14:17:44.505000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:21.145248768
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 212/212 [00:13<00:00, 16.28it/s]
+Mean loop frequency: 16.29 Hz
+Processed sub_11 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_7 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-29 16:06:16.835000 to 2024-05-29 16:06:45.974000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.074720
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 291/291 [01:22<00:00,  3.51it/s]
+Mean loop frequency: 3.54 Hz
+Processed sub_7 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_7 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-29 16:06:57.594000 to 2024-05-29 16:07:13.431000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:15.752914944
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 158/158 [00:45<00:00,  3.50it/s]
+Mean loop frequency: 3.54 Hz
+Processed sub_7 - FAST - WALKING for 5 steps ahead.
+Processing sub_7 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-29 16:07:26.762000 to 2024-05-29 16:07:47.146000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.344024320
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 204/204 [00:17<00:00, 11.97it/s]
+Mean loop frequency: 11.97 Hz
+Processed sub_7 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_8 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:16:54.540000 to 2024-05-30 12:17:23.776000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.204252928
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 293/293 [01:22<00:00,  3.57it/s]
+Mean loop frequency: 3.60 Hz
+Processed sub_8 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_8 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:17:35.603000 to 2024-05-30 12:17:51.403000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:15.730817536
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 158/158 [00:45<00:00,  3.46it/s]
+Mean loop frequency: 3.49 Hz
+Processed sub_8 - FAST - WALKING for 5 steps ahead.
+Processing sub_8 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:18:05.008000 to 2024-05-30 12:18:25.195000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.164067584
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 202/202 [00:10<00:00, 18.82it/s]
+Mean loop frequency: 18.83 Hz
+Processed sub_8 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_10 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:46:47.896000 to 2024-05-30 14:47:17.240000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.309116160
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 294/294 [01:25<00:00,  3.44it/s]
+Mean loop frequency: 3.47 Hz
+Processed sub_10 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_10 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:47:29.312000 to 2024-05-30 14:47:45.496000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:16.163269632
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 162/162 [00:47<00:00,  3.40it/s]
+Mean loop frequency: 3.44 Hz
+Processed sub_10 - FAST - WALKING for 5 steps ahead.
+Processing sub_10 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:47:59.453000 to 2024-05-30 14:48:19.999000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.496087040
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 205/205 [00:15<00:00, 13.57it/s]
+Mean loop frequency: 13.57 Hz
+Processed sub_10 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_6 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-27 11:30:46.840000 to 2024-05-27 11:31:11.038000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:24.122764032
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 242/242 [01:10<00:00,  3.44it/s]
+Mean loop frequency: 3.47 Hz
+Processed sub_6 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_6 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-27 11:31:19.185000 to 2024-05-27 11:31:31.343000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:12.061261824
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 121/121 [00:35<00:00,  3.39it/s]
+Mean loop frequency: 3.41 Hz
+Processed sub_6 - FAST - WALKING for 5 steps ahead.
+Processing sub_6 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-27 11:31:40.568000 to 2024-05-27 11:31:54.803000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:14.211811840
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 143/143 [00:09<00:00, 15.34it/s]
+Mean loop frequency: 15.35 Hz
+Processed sub_6 - FAST - PASSING-BY for 5 steps ahead.
+Average error (CA): -0.000604, -0.011126, -0.063420
+Average error (IMM): 0.000112, -0.016247, -0.049854
+Average RMSE (CA): 0.102653, 0.117928, 0.271226
+Average RMSE (IMM): 0.071139, 0.112140, 0.257883
+Average std (CA): 0.1026, 0.1174, 0.2636
+Average std (IMM): 0.0711, 0.1109, 0.2530
+Average percentage (CA): 80.7420, 71.5945, 82.7801
+Average percentage (IMM): 82.3645, 74.2913, 82.5679
+===============================================
+
+
+Iteration 6/10 for var_q and 1/1 for var_P
+Current values: var_q = 0.007119140625000001, var_P_acc = 1.1111
+Processing sub_9 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:32:04.856000 to 2024-05-30 12:32:34.380000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.504439552
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 296/296 [01:26<00:00,  3.44it/s]
+Mean loop frequency: 3.46 Hz
+Processed sub_9 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_9 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:32:46.007000 to 2024-05-30 12:33:01.994000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:15.925924352
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 160/160 [00:45<00:00,  3.53it/s]
+Mean loop frequency: 3.56 Hz
+Processed sub_9 - FAST - WALKING for 5 steps ahead.
+Processing sub_9 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:33:15.791000 to 2024-05-30 12:33:36.428000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.609293824
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 207/207 [00:10<00:00, 19.33it/s]
+Mean loop frequency: 19.34 Hz
+Processed sub_9 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_4 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-27 10:22:08.148000 to 2024-05-27 10:22:32.519000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:24.279510016
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 243/243 [01:09<00:00,  3.50it/s]
+Mean loop frequency: 3.53 Hz
+Processed sub_4 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_4 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-27 10:22:40.807000 to 2024-05-27 10:22:53.038000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:12.188413696
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 122/122 [00:35<00:00,  3.39it/s]
+Mean loop frequency: 3.43 Hz
+Processed sub_4 - FAST - WALKING for 5 steps ahead.
+Processing sub_4 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-27 10:23:02.464000 to 2024-05-27 10:23:16.869000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:14.345150464
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 144/144 [00:06<00:00, 22.51it/s]
+Mean loop frequency: 22.53 Hz
+Processed sub_4 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_11 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:16:10.235000 to 2024-05-30 14:16:40.169000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.906913280
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 300/300 [01:24<00:00,  3.57it/s]
+Mean loop frequency: 3.60 Hz
+Processed sub_11 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_11 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:16:52.713000 to 2024-05-30 14:17:09.369000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:16.574949376
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 166/166 [00:45<00:00,  3.62it/s]
+Mean loop frequency: 3.64 Hz
+Processed sub_11 - FAST - WALKING for 5 steps ahead.
+Processing sub_11 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:17:23.261000 to 2024-05-30 14:17:44.505000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:21.145248768
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 212/212 [00:12<00:00, 17.50it/s]
+Mean loop frequency: 17.51 Hz
+Processed sub_11 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_7 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-29 16:06:16.835000 to 2024-05-29 16:06:45.974000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.074720
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 291/291 [01:23<00:00,  3.47it/s]
+Mean loop frequency: 3.49 Hz
+Processed sub_7 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_7 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-29 16:06:57.594000 to 2024-05-29 16:07:13.431000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:15.752914944
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 158/158 [00:45<00:00,  3.49it/s]
+Mean loop frequency: 3.52 Hz
+Processed sub_7 - FAST - WALKING for 5 steps ahead.
+Processing sub_7 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-29 16:07:26.762000 to 2024-05-29 16:07:47.146000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.344024320
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 204/204 [00:16<00:00, 12.44it/s]
+Mean loop frequency: 12.44 Hz
+Processed sub_7 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_8 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:16:54.540000 to 2024-05-30 12:17:23.776000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.204252928
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 293/293 [01:23<00:00,  3.50it/s]
+Mean loop frequency: 3.53 Hz
+Processed sub_8 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_8 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:17:35.603000 to 2024-05-30 12:17:51.403000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:15.730817536
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 158/158 [00:43<00:00,  3.63it/s]
+Mean loop frequency: 3.67 Hz
+Processed sub_8 - FAST - WALKING for 5 steps ahead.
+Processing sub_8 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:18:05.008000 to 2024-05-30 12:18:25.195000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.164067584
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 202/202 [00:09<00:00, 21.46it/s]
+Mean loop frequency: 21.47 Hz
+Processed sub_8 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_10 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:46:47.896000 to 2024-05-30 14:47:17.240000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.309116160
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 294/294 [01:24<00:00,  3.48it/s]
+Mean loop frequency: 3.52 Hz
+Processed sub_10 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_10 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:47:29.312000 to 2024-05-30 14:47:45.496000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:16.163269632
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 162/162 [00:48<00:00,  3.31it/s]
+Mean loop frequency: 3.33 Hz
+Processed sub_10 - FAST - WALKING for 5 steps ahead.
+Processing sub_10 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:47:59.453000 to 2024-05-30 14:48:19.999000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.496087040
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 205/205 [00:14<00:00, 14.32it/s]
+Mean loop frequency: 14.32 Hz
+Processed sub_10 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_6 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-27 11:30:46.840000 to 2024-05-27 11:31:11.038000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:24.122764032
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 242/242 [01:13<00:00,  3.31it/s]
+Mean loop frequency: 3.33 Hz
+Processed sub_6 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_6 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-27 11:31:19.185000 to 2024-05-27 11:31:31.343000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:12.061261824
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 121/121 [00:34<00:00,  3.54it/s]
+Mean loop frequency: 3.58 Hz
+Processed sub_6 - FAST - WALKING for 5 steps ahead.
+Processing sub_6 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-27 11:31:40.568000 to 2024-05-27 11:31:54.803000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:14.211811840
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 143/143 [00:09<00:00, 14.96it/s]
+Mean loop frequency: 14.97 Hz
+Processed sub_6 - FAST - PASSING-BY for 5 steps ahead.
+Average error (CA): -0.000686, -0.011125, -0.063366
+Average error (IMM): 0.000166, -0.015694, -0.049359
+Average RMSE (CA): 0.099973, 0.117180, 0.271305
+Average RMSE (IMM): 0.069617, 0.111775, 0.258016
+Average std (CA): 0.0999, 0.1166, 0.2637
+Average std (IMM): 0.0696, 0.1106, 0.2532
+Average percentage (CA): 79.6247, 70.5588, 81.8079
+Average percentage (IMM): 81.2434, 73.5895, 81.7206
+===============================================
+
+
+Iteration 7/10 for var_q and 1/1 for var_P
+Current values: var_q = 0.005339355468750001, var_P_acc = 1.1111
+Processing sub_9 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:32:04.856000 to 2024-05-30 12:32:34.380000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.504439552
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 296/296 [01:26<00:00,  3.44it/s]
+Mean loop frequency: 3.47 Hz
+Processed sub_9 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_9 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:32:46.007000 to 2024-05-30 12:33:01.994000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:15.925924352
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 160/160 [00:46<00:00,  3.47it/s]
+Mean loop frequency: 3.50 Hz
+Processed sub_9 - FAST - WALKING for 5 steps ahead.
+Processing sub_9 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:33:15.791000 to 2024-05-30 12:33:36.428000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.609293824
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 207/207 [00:09<00:00, 22.58it/s]
+Mean loop frequency: 22.59 Hz
+Processed sub_9 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_4 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-27 10:22:08.148000 to 2024-05-27 10:22:32.519000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:24.279510016
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 243/243 [01:12<00:00,  3.35it/s]
+Mean loop frequency: 3.37 Hz
+Processed sub_4 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_4 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-27 10:22:40.807000 to 2024-05-27 10:22:53.038000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:12.188413696
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 122/122 [00:35<00:00,  3.47it/s]
+Mean loop frequency: 3.51 Hz
+Processed sub_4 - FAST - WALKING for 5 steps ahead.
+Processing sub_4 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-27 10:23:02.464000 to 2024-05-27 10:23:16.869000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:14.345150464
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 144/144 [00:07<00:00, 19.07it/s]
+Mean loop frequency: 19.09 Hz
+Processed sub_4 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_11 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:16:10.235000 to 2024-05-30 14:16:40.169000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.906913280
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 300/300 [01:24<00:00,  3.54it/s]
+Mean loop frequency: 3.57 Hz
+Processed sub_11 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_11 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:16:52.713000 to 2024-05-30 14:17:09.369000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:16.574949376
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 166/166 [00:45<00:00,  3.63it/s]
+Mean loop frequency: 3.67 Hz
+Processed sub_11 - FAST - WALKING for 5 steps ahead.
+Processing sub_11 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:17:23.261000 to 2024-05-30 14:17:44.505000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:21.145248768
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 212/212 [00:11<00:00, 17.67it/s]
+Mean loop frequency: 17.67 Hz
+Processed sub_11 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_7 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-29 16:06:16.835000 to 2024-05-29 16:06:45.974000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.074720
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 291/291 [01:25<00:00,  3.41it/s]
+Mean loop frequency: 3.44 Hz
+Processed sub_7 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_7 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-29 16:06:57.594000 to 2024-05-29 16:07:13.431000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:15.752914944
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 158/158 [00:46<00:00,  3.36it/s]
+Mean loop frequency: 3.39 Hz
+Processed sub_7 - FAST - WALKING for 5 steps ahead.
+Processing sub_7 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-29 16:07:26.762000 to 2024-05-29 16:07:47.146000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.344024320
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 204/204 [00:16<00:00, 12.52it/s]
+Mean loop frequency: 12.52 Hz
+Processed sub_7 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_8 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:16:54.540000 to 2024-05-30 12:17:23.776000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.204252928
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 293/293 [01:26<00:00,  3.37it/s]
+Mean loop frequency: 3.39 Hz
+Processed sub_8 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_8 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:17:35.603000 to 2024-05-30 12:17:51.403000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:15.730817536
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 158/158 [00:45<00:00,  3.46it/s]
+Mean loop frequency: 3.49 Hz
+Processed sub_8 - FAST - WALKING for 5 steps ahead.
+Processing sub_8 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:18:05.008000 to 2024-05-30 12:18:25.195000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.164067584
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 202/202 [00:10<00:00, 20.14it/s]
+Mean loop frequency: 20.15 Hz
+Processed sub_8 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_10 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:46:47.896000 to 2024-05-30 14:47:17.240000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.309116160
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 294/294 [01:26<00:00,  3.39it/s]
+Mean loop frequency: 3.42 Hz
+Processed sub_10 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_10 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:47:29.312000 to 2024-05-30 14:47:45.496000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:16.163269632
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 162/162 [00:47<00:00,  3.44it/s]
+Mean loop frequency: 3.46 Hz
+Processed sub_10 - FAST - WALKING for 5 steps ahead.
+Processing sub_10 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:47:59.453000 to 2024-05-30 14:48:19.999000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.496087040
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 205/205 [00:14<00:00, 14.29it/s]
+Mean loop frequency: 14.30 Hz
+Processed sub_10 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_6 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-27 11:30:46.840000 to 2024-05-27 11:31:11.038000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:24.122764032
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 242/242 [01:06<00:00,  3.65it/s]
+Mean loop frequency: 3.69 Hz
+Processed sub_6 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_6 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-27 11:31:19.185000 to 2024-05-27 11:31:31.343000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:12.061261824
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 121/121 [00:32<00:00,  3.78it/s]
+Mean loop frequency: 3.82 Hz
+Processed sub_6 - FAST - WALKING for 5 steps ahead.
+Processing sub_6 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-27 11:31:40.568000 to 2024-05-27 11:31:54.803000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:14.211811840
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 143/143 [00:10<00:00, 14.06it/s]
+Mean loop frequency: 14.07 Hz
+Processed sub_6 - FAST - PASSING-BY for 5 steps ahead.
+Average error (CA): -0.000783, -0.011137, -0.063286
+Average error (IMM): 0.000228, -0.014947, -0.049154
+Average RMSE (CA): 0.097302, 0.116708, 0.271360
+Average RMSE (IMM): 0.067986, 0.111623, 0.258442
+Average std (CA): 0.0973, 0.1161, 0.2638
+Average std (IMM): 0.0680, 0.1105, 0.2537
+Average percentage (CA): 78.6210, 68.8825, 81.2800
+Average percentage (IMM): 80.2009, 72.6769, 81.0725
+===============================================
+
+
+Iteration 8/10 for var_q and 1/1 for var_P
+Current values: var_q = 0.004004516601562501, var_P_acc = 1.1111
+Processing sub_9 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:32:04.856000 to 2024-05-30 12:32:34.380000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.504439552
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 296/296 [01:23<00:00,  3.54it/s]
+Mean loop frequency: 3.57 Hz
+Processed sub_9 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_9 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:32:46.007000 to 2024-05-30 12:33:01.994000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:15.925924352
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 160/160 [00:47<00:00,  3.35it/s]
+Mean loop frequency: 3.38 Hz
+Processed sub_9 - FAST - WALKING for 5 steps ahead.
+Processing sub_9 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:33:15.791000 to 2024-05-30 12:33:36.428000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.609293824
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 207/207 [00:10<00:00, 19.77it/s]
+Mean loop frequency: 19.80 Hz
+Processed sub_9 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_4 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-27 10:22:08.148000 to 2024-05-27 10:22:32.519000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:24.279510016
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 243/243 [01:09<00:00,  3.50it/s]
+Mean loop frequency: 3.53 Hz
+Processed sub_4 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_4 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-27 10:22:40.807000 to 2024-05-27 10:22:53.038000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:12.188413696
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 122/122 [00:34<00:00,  3.51it/s]
+Mean loop frequency: 3.55 Hz
+Processed sub_4 - FAST - WALKING for 5 steps ahead.
+Processing sub_4 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-27 10:23:02.464000 to 2024-05-27 10:23:16.869000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:14.345150464
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 144/144 [00:06<00:00, 22.54it/s]
+Mean loop frequency: 22.55 Hz
+Processed sub_4 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_11 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:16:10.235000 to 2024-05-30 14:16:40.169000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.906913280
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 300/300 [01:23<00:00,  3.61it/s]
+Mean loop frequency: 3.65 Hz
+Processed sub_11 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_11 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:16:52.713000 to 2024-05-30 14:17:09.369000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:16.574949376
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 166/166 [00:48<00:00,  3.45it/s]
+Mean loop frequency: 3.48 Hz
+Processed sub_11 - FAST - WALKING for 5 steps ahead.
+Processing sub_11 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:17:23.261000 to 2024-05-30 14:17:44.505000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:21.145248768
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 212/212 [00:11<00:00, 19.06it/s]
+Mean loop frequency: 19.07 Hz
+Processed sub_11 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_7 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-29 16:06:16.835000 to 2024-05-29 16:06:45.974000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.074720
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 291/291 [01:25<00:00,  3.40it/s]
+Mean loop frequency: 3.43 Hz
+Processed sub_7 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_7 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-29 16:06:57.594000 to 2024-05-29 16:07:13.431000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:15.752914944
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 158/158 [00:44<00:00,  3.53it/s]
+Mean loop frequency: 3.55 Hz
+Processed sub_7 - FAST - WALKING for 5 steps ahead.
+Processing sub_7 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-29 16:07:26.762000 to 2024-05-29 16:07:47.146000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.344024320
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 204/204 [00:15<00:00, 13.46it/s]
+Mean loop frequency: 13.46 Hz
+Processed sub_7 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_8 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:16:54.540000 to 2024-05-30 12:17:23.776000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.204252928
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 293/293 [01:23<00:00,  3.50it/s]
+Mean loop frequency: 3.53 Hz
+Processed sub_8 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_8 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:17:35.603000 to 2024-05-30 12:17:51.403000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:15.730817536
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 158/158 [00:44<00:00,  3.53it/s]
+Mean loop frequency: 3.57 Hz
+Processed sub_8 - FAST - WALKING for 5 steps ahead.
+Processing sub_8 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:18:05.008000 to 2024-05-30 12:18:25.195000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.164067584
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 202/202 [00:10<00:00, 20.17it/s]
+Mean loop frequency: 20.17 Hz
+Processed sub_8 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_10 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:46:47.896000 to 2024-05-30 14:47:17.240000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.309116160
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 294/294 [01:24<00:00,  3.47it/s]
+Mean loop frequency: 3.51 Hz
+Processed sub_10 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_10 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:47:29.312000 to 2024-05-30 14:47:45.496000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:16.163269632
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 162/162 [00:48<00:00,  3.35it/s]
+Mean loop frequency: 3.39 Hz
+Processed sub_10 - FAST - WALKING for 5 steps ahead.
+Processing sub_10 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:47:59.453000 to 2024-05-30 14:48:19.999000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.496087040
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 205/205 [00:16<00:00, 12.69it/s]
+Mean loop frequency: 12.70 Hz
+Processed sub_10 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_6 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-27 11:30:46.840000 to 2024-05-27 11:31:11.038000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:24.122764032
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 242/242 [01:08<00:00,  3.54it/s]
+Mean loop frequency: 3.57 Hz
+Processed sub_6 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_6 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-27 11:31:19.185000 to 2024-05-27 11:31:31.343000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:12.061261824
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 121/121 [00:34<00:00,  3.46it/s]
+Mean loop frequency: 3.50 Hz
+Processed sub_6 - FAST - WALKING for 5 steps ahead.
+Processing sub_6 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-27 11:31:40.568000 to 2024-05-27 11:31:54.803000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:14.211811840
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 143/143 [00:10<00:00, 14.10it/s]
+Mean loop frequency: 14.11 Hz
+Processed sub_6 - FAST - PASSING-BY for 5 steps ahead.
+Average error (CA): -0.000891, -0.011160, -0.063172
+Average error (IMM): 0.000298, -0.014157, -0.048704
+Average RMSE (CA): 0.094655, 0.116498, 0.271391
+Average RMSE (IMM): 0.066319, 0.111956, 0.259089
+Average std (CA): 0.0946, 0.1159, 0.2638
+Average std (IMM): 0.0663, 0.1110, 0.2544
+Average percentage (CA): 77.4985, 66.6133, 80.5268
+Average percentage (IMM): 79.1366, 71.9602, 80.3113
+===============================================
+
+
+Iteration 9/10 for var_q and 1/1 for var_P
+Current values: var_q = 0.0030033874511718756, var_P_acc = 1.1111
+Processing sub_9 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:32:04.856000 to 2024-05-30 12:32:34.380000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.504439552
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 296/296 [01:26<00:00,  3.44it/s]
+Mean loop frequency: 3.47 Hz
+Processed sub_9 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_9 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:32:46.007000 to 2024-05-30 12:33:01.994000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:15.925924352
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 160/160 [00:46<00:00,  3.46it/s]
+Mean loop frequency: 3.50 Hz
+Processed sub_9 - FAST - WALKING for 5 steps ahead.
+Processing sub_9 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:33:15.791000 to 2024-05-30 12:33:36.428000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.609293824
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 207/207 [00:10<00:00, 20.57it/s]
+Mean loop frequency: 20.58 Hz
+Processed sub_9 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_4 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-27 10:22:08.148000 to 2024-05-27 10:22:32.519000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:24.279510016
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 243/243 [01:09<00:00,  3.48it/s]
+Mean loop frequency: 3.52 Hz
+Processed sub_4 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_4 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-27 10:22:40.807000 to 2024-05-27 10:22:53.038000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:12.188413696
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 122/122 [00:34<00:00,  3.51it/s]
+Mean loop frequency: 3.53 Hz
+Processed sub_4 - FAST - WALKING for 5 steps ahead.
+Processing sub_4 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-27 10:23:02.464000 to 2024-05-27 10:23:16.869000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:14.345150464
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 144/144 [00:08<00:00, 16.46it/s]
+Mean loop frequency: 16.47 Hz
+Processed sub_4 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_11 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:16:10.235000 to 2024-05-30 14:16:40.169000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.906913280
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 300/300 [01:23<00:00,  3.61it/s]
+Mean loop frequency: 3.66 Hz
+Processed sub_11 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_11 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:16:52.713000 to 2024-05-30 14:17:09.369000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:16.574949376
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 166/166 [00:49<00:00,  3.37it/s]
+Mean loop frequency: 3.40 Hz
+Processed sub_11 - FAST - WALKING for 5 steps ahead.
+Processing sub_11 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:17:23.261000 to 2024-05-30 14:17:44.505000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:21.145248768
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 212/212 [00:12<00:00, 16.77it/s]
+Mean loop frequency: 16.77 Hz
+Processed sub_11 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_7 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-29 16:06:16.835000 to 2024-05-29 16:06:45.974000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.074720
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 291/291 [01:22<00:00,  3.51it/s]
+Mean loop frequency: 3.54 Hz
+Processed sub_7 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_7 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-29 16:06:57.594000 to 2024-05-29 16:07:13.431000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:15.752914944
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 158/158 [00:45<00:00,  3.48it/s]
+Mean loop frequency: 3.51 Hz
+Processed sub_7 - FAST - WALKING for 5 steps ahead.
+Processing sub_7 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-29 16:07:26.762000 to 2024-05-29 16:07:47.146000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.344024320
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 204/204 [00:16<00:00, 12.11it/s]
+Mean loop frequency: 12.11 Hz
+Processed sub_7 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_8 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:16:54.540000 to 2024-05-30 12:17:23.776000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.204252928
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 293/293 [01:24<00:00,  3.48it/s]
+Mean loop frequency: 3.52 Hz
+Processed sub_8 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_8 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:17:35.603000 to 2024-05-30 12:17:51.403000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:15.730817536
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 158/158 [00:49<00:00,  3.21it/s]
+Mean loop frequency: 3.24 Hz
+Processed sub_8 - FAST - WALKING for 5 steps ahead.
+Processing sub_8 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:18:05.008000 to 2024-05-30 12:18:25.195000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.164067584
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 202/202 [00:09<00:00, 20.47it/s]
+Mean loop frequency: 20.47 Hz
+Processed sub_8 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_10 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:46:47.896000 to 2024-05-30 14:47:17.240000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.309116160
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 294/294 [01:25<00:00,  3.44it/s]
+Mean loop frequency: 3.47 Hz
+Processed sub_10 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_10 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:47:29.312000 to 2024-05-30 14:47:45.496000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:16.163269632
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 162/162 [00:46<00:00,  3.46it/s]
+Mean loop frequency: 3.48 Hz
+Processed sub_10 - FAST - WALKING for 5 steps ahead.
+Processing sub_10 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:47:59.453000 to 2024-05-30 14:48:19.999000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.496087040
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 205/205 [00:15<00:00, 13.51it/s]
+Mean loop frequency: 13.51 Hz
+Processed sub_10 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_6 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-27 11:30:46.840000 to 2024-05-27 11:31:11.038000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:24.122764032
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 242/242 [01:10<00:00,  3.43it/s]
+Mean loop frequency: 3.45 Hz
+Processed sub_6 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_6 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-27 11:31:19.185000 to 2024-05-27 11:31:31.343000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:12.061261824
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 121/121 [00:35<00:00,  3.39it/s]
+Mean loop frequency: 3.43 Hz
+Processed sub_6 - FAST - WALKING for 5 steps ahead.
+Processing sub_6 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-27 11:31:40.568000 to 2024-05-27 11:31:54.803000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:14.211811840
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 143/143 [00:08<00:00, 16.56it/s]
+Mean loop frequency: 16.57 Hz
+Processed sub_6 - FAST - PASSING-BY for 5 steps ahead.
+Average error (CA): -0.001004, -0.011196, -0.063014
+Average error (IMM): 0.000367, -0.013500, -0.048426
+Average RMSE (CA): 0.092052, 0.116524, 0.271393
+Average RMSE (IMM): 0.064810, 0.113276, 0.259727
+Average std (CA): 0.0920, 0.1159, 0.2639
+Average std (IMM): 0.0648, 0.1124, 0.2551
+Average percentage (CA): 76.6028, 64.7504, 79.7653
+Average percentage (IMM): 78.1909, 70.3299, 79.2330
+===============================================
+
+
+Iteration 10/10 for var_q and 1/1 for var_P
+Current values: var_q = 0.0022525405883789067, var_P_acc = 1.1111
+Processing sub_9 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:32:04.856000 to 2024-05-30 12:32:34.380000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.504439552
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 296/296 [01:23<00:00,  3.54it/s]
+Mean loop frequency: 3.58 Hz
+Processed sub_9 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_9 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:32:46.007000 to 2024-05-30 12:33:01.994000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:15.925924352
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 160/160 [00:46<00:00,  3.45it/s]
+Mean loop frequency: 3.47 Hz
+Processed sub_9 - FAST - WALKING for 5 steps ahead.
+Processing sub_9 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:33:15.791000 to 2024-05-30 12:33:36.428000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.609293824
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 207/207 [00:09<00:00, 21.13it/s]
+Mean loop frequency: 21.14 Hz
+Processed sub_9 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_4 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-27 10:22:08.148000 to 2024-05-27 10:22:32.519000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:24.279510016
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 243/243 [01:09<00:00,  3.52it/s]
+Mean loop frequency: 3.56 Hz
+Processed sub_4 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_4 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-27 10:22:40.807000 to 2024-05-27 10:22:53.038000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:12.188413696
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 122/122 [00:33<00:00,  3.62it/s]
+Mean loop frequency: 3.64 Hz
+Processed sub_4 - FAST - WALKING for 5 steps ahead.
+Processing sub_4 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-27 10:23:02.464000 to 2024-05-27 10:23:16.869000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:14.345150464
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 144/144 [00:05<00:00, 24.93it/s]
+Mean loop frequency: 24.95 Hz
+Processed sub_4 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_11 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:16:10.235000 to 2024-05-30 14:16:40.169000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.906913280
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 300/300 [01:26<00:00,  3.48it/s]
+Mean loop frequency: 3.52 Hz
+Processed sub_11 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_11 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:16:52.713000 to 2024-05-30 14:17:09.369000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:16.574949376
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 166/166 [00:45<00:00,  3.62it/s]
+Mean loop frequency: 3.66 Hz
+Processed sub_11 - FAST - WALKING for 5 steps ahead.
+Processing sub_11 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:17:23.261000 to 2024-05-30 14:17:44.505000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:21.145248768
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 212/212 [00:13<00:00, 16.24it/s]
+Mean loop frequency: 16.24 Hz
+Processed sub_11 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_7 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-29 16:06:16.835000 to 2024-05-29 16:06:45.974000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.074720
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 291/291 [01:21<00:00,  3.56it/s]
+Mean loop frequency: 3.59 Hz
+Processed sub_7 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_7 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-29 16:06:57.594000 to 2024-05-29 16:07:13.431000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:15.752914944
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 158/158 [00:47<00:00,  3.33it/s]
+Mean loop frequency: 3.35 Hz
+Processed sub_7 - FAST - WALKING for 5 steps ahead.
+Processing sub_7 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-29 16:07:26.762000 to 2024-05-29 16:07:47.146000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.344024320
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 204/204 [00:15<00:00, 12.75it/s]
+Mean loop frequency: 12.76 Hz
+Processed sub_7 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_8 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:16:54.540000 to 2024-05-30 12:17:23.776000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.204252928
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 293/293 [01:26<00:00,  3.41it/s]
+Mean loop frequency: 3.44 Hz
+Processed sub_8 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_8 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:17:35.603000 to 2024-05-30 12:17:51.403000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:15.730817536
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 158/158 [00:45<00:00,  3.44it/s]
+Mean loop frequency: 3.49 Hz
+Processed sub_8 - FAST - WALKING for 5 steps ahead.
+Processing sub_8 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 12:18:05.008000 to 2024-05-30 12:18:25.195000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.164067584
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 202/202 [00:09<00:00, 21.95it/s]
+Mean loop frequency: 21.96 Hz
+Processed sub_8 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_10 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:46:47.896000 to 2024-05-30 14:47:17.240000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:29.309116160
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 294/294 [01:23<00:00,  3.54it/s]
+Mean loop frequency: 3.58 Hz
+Processed sub_10 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_10 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:47:29.312000 to 2024-05-30 14:47:45.496000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:16.163269632
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 162/162 [00:46<00:00,  3.47it/s]
+Mean loop frequency: 3.49 Hz
+Processed sub_10 - FAST - WALKING for 5 steps ahead.
+Processing sub_10 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-30 14:47:59.453000 to 2024-05-30 14:48:19.999000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:20.496087040
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 205/205 [00:15<00:00, 13.44it/s]
+Mean loop frequency: 13.44 Hz
+Processed sub_10 - FAST - PASSING-BY for 5 steps ahead.
+Processing sub_6 - FAST - PICK-&-PLACE for 5 steps ahead...
+Selecting measurements from:  2024-05-27 11:30:46.840000 to 2024-05-27 11:31:11.038000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:24.122764032
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 242/242 [01:09<00:00,  3.50it/s]
+Mean loop frequency: 3.54 Hz
+Processed sub_6 - FAST - PICK-&-PLACE for 5 steps ahead.
+Processing sub_6 - FAST - WALKING for 5 steps ahead...
+Selecting measurements from:  2024-05-27 11:31:19.185000 to 2024-05-27 11:31:31.343000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:12.061261824
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 121/121 [00:34<00:00,  3.47it/s]
+Mean loop frequency: 3.50 Hz
+Processed sub_6 - FAST - WALKING for 5 steps ahead.
+Processing sub_6 - FAST - PASSING-BY for 5 steps ahead...
+Selecting measurements from:  2024-05-27 11:31:40.568000 to 2024-05-27 11:31:54.803000
+Start time: 0 days 00:00:00 End time: 0 days 00:00:14.211811840
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 143/143 [00:09<00:00, 15.05it/s]
+Mean loop frequency: 15.06 Hz
+Processed sub_6 - FAST - PASSING-BY for 5 steps ahead.
+Average error (CA): -0.001118, -0.011245, -0.062801
+Average error (IMM): 0.000435, -0.012607, -0.048019
+Average RMSE (CA): 0.089516, 0.116752, 0.271368
+Average RMSE (IMM): 0.063591, 0.115160, 0.260279
+Average std (CA): 0.0894, 0.1162, 0.2639
+Average std (IMM): 0.0636, 0.1144, 0.2558
+Average percentage (CA): 75.4974, 62.9565, 79.0938
+Average percentage (IMM): 77.3125, 69.2563, 79.1013
+===============================================
+
+
+Parameter tuning took 159 minutes and 33.94 seconds.
