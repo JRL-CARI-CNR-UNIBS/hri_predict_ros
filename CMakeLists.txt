@@ -8,24 +8,11 @@ find_package(catkin REQUIRED COMPONENTS
   sensor_msgs
   geometry_msgs
   trajectory_msgs
-  # message_generation
 )
 
 # Install modules and global scripts declared therein
 # See http://ros.org/doc/api/catkin/html/user_guide/setup_dot_py.html
 catkin_python_setup()
-
-# Generate messages in the 'msg' folder
-# add_message_files(
-#   FILES
-#   message.msg
-# )
-
-# Generate added messages and services with any dependencies listed here
-# generate_messages(
-  # DEPENDENCIES
-  # std_msgs
-# )
 
 ###################################
 ## catkin specific configuration ##
@@ -55,13 +42,12 @@ catkin_install_python(PROGRAMS
 )
 
 ## Mark other files for installation (e.g. launch and bag files, etc.)
-install(FILES
-  config/params.yaml
-  launch/predictor_bringup.launch
-  launch/record_data_online.launch
-  launch/record_data_offline.launch
-  launch/execute_trajectories.launch
-  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
+install(DIRECTORY config/
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/config
+)
+
+install(DIRECTORY launch/
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch
 )
 
 #############
