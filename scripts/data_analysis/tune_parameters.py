@@ -27,7 +27,8 @@ with open(os.path.join(preprocessed_dir, 'trigger_data.pkl'), 'rb') as f:
 # ====================================================================================================
 print("\n2 / 5. Define a function to tune parameters...")
 
-def parameter_tuning(training_subjects, velocities, tasks, keypoints, dim_name_per_kpt, pred_horizons,
+def parameter_tuning(trigger_data, measurement_data, training_subjects,
+                     velocities, tasks, keypoints, dim_name_per_kpt, pred_horizons,
                      init_P, var_r, var_q, decrement_factor_q, decrement_factor_P, n_iter_P, n_iter_q,
                      n_var_per_dof, n_dim_per_kpt, dim_x, n_kpts,
                      var_P_pos, var_P_vel, var_P_acc):
@@ -43,7 +44,7 @@ def parameter_tuning(training_subjects, velocities, tasks, keypoints, dim_name_p
 
             _, filtering_results, prediction_results = ukf_predictor.run_filtering_loop(
                 trigger_data, measurement_data,
-                train_subjects, VELOCITIES, TASK_NAMES, PRED_HORIZONS, predict_k_steps,
+                training_subjects, velocities, tasks, pred_horizons, predict_k_steps,
                 dim_x, dim_z, p_idx, dt,
                 n_var_per_dof, n_dim_per_kpt, n_kpts,
                 init_P, var_r, var_q,
@@ -257,7 +258,8 @@ velocities = ['FAST']   # worst-case scenario
 pred_horizons = [5]     # worst-case scenario
 tasks = TASK_NAMES      # consider all tasks to get a general idea of the performance
 
-parameter_tuning(train_subjects, velocities, tasks, KEYPOINTS, DIMENSIONS_PER_KEYPOINT, pred_horizons,
+parameter_tuning(trigger_data, measurement_data, train_subjects,
+                 velocities, tasks, KEYPOINTS, DIMENSIONS_PER_KEYPOINT, pred_horizons,
                  init_P, var_r, var_q, decrement_factor_q, decrement_factor_P, iter_P, iter_q,
                  n_var_per_dof, n_dim_per_kpt, dim_x, n_kpts,
                  var_P_pos, var_P_vel, var_P_acc)
