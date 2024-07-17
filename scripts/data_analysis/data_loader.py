@@ -4,7 +4,7 @@ import pandas as pd
 from tf import transformations
 
 # ====================================================================================================
-print("1 / 5. Define parameters and load data...")
+print("\n1 / 5. Define parameters and load data...")
 
 # Create a RosPack object
 rospack = rospkg.RosPack()
@@ -43,7 +43,7 @@ human_meas_names = ['human_kp{}_{}'.format(i, suffix)
                     for suffix in ['x', 'y', 'z']]
 
 # ====================================================================================================
-print("2 / 5. Load rosbag data...")
+print("\n2 / 5. Load rosbag data...")
 
 # Define the path to the bag directory
 bag_dir = os.path.join(package_path, 'logs', 'bag')
@@ -101,7 +101,7 @@ for bag_file in bag_files:
     bag_data[subject_id] = rows_list
 
 # ====================================================================================================
-print("3 / 5. Preprocess measurement data...")
+print("\n3 / 5. Preprocess measurement data...")
 
 measurement_data = {}
 for subject, bag in bag_data.items():
@@ -124,7 +124,7 @@ for subject, bag in bag_data.items():
     measurement_data[subject] = data
 
 # ====================================================================================================
-print("4 / 5. Load GUI data and extract trigger times...")
+print("\n4 / 5. Load GUI data and extract trigger times...")
 
 gui_dir = os.path.join(package_path, 'logs', 'gui_data')
 
@@ -161,7 +161,7 @@ for subject, gui in gui_data.items():
             trigger_data[(subject, velocity, task)] = first_last_timestamps
 
 # ====================================================================================================
-print("5 / 5. Save measurement and trigger data to file...")
+print("\n5 / 5. Save measurement and trigger data to file...")
 
 preprocessed_dir = os.path.join(package_path, 'logs', 'preprocessed')
 

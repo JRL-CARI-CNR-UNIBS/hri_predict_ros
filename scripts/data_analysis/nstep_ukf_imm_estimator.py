@@ -1,10 +1,10 @@
 import numpy as np
+import pandas as pd
 from filterpy.kalman import UnscentedKalmanFilter, MerweScaledSigmaPoints
 from filterpy.kalman import IMMEstimator
 from filterpy.common import Q_discrete_white_noise
 from scipy.linalg import block_diag
-import copy
-import torch
+import copy, torch, tqdm, time
 
 
 def get_near_psd(P, max_iter=10):
@@ -120,40 +120,29 @@ def initialize_filters(dim_x, dim_z, p_idx, dt,
 
     bank = IMMEstimator(filters, mu, M)
 
-    return (ca_ukf, ca_no_ukf, cv_ukf, bank)
+    return (ca_ukf, cv_ukf, bank)
 
 
 # Define a custom inverse function for PyTorch to use GPU
 def custom_inv(a):
-    t = torch.from_numpy(a)
-    t = t.cuda()
-    t_inv = torch.inverse(t)
-    return t_inv.cpu().numpy()
+    # Detect if GPU is available
+    if torch.cuda.is_available():
+        t = torch.from_numpy(a)
+        t = t.cuda()
+        t_inv = torch.inverse(t)
+        return t_inv.cpu().numpy()
+    else:
+        return np.linalg.inv(a)
 
 
-def run_filtering_loop(subject_ids, velocities, task_names, pred_horizons,
+def run_filtering_loop(trigger_data, measurement_data,
+                       subject_ids, velocities, task_names, pred_horizons, predict_k_steps,
                        dim_x, dim_z, p_idx, dt,
                        n_var_per_dof, n_dim_per_kpt, n_kpts,
                        init_P, var_r, var_q,
-                       custom_inv, mu, M):
-
-    # Initialize the filters
-    ca_ukf, ca_no_ukf, cv_ukf, bank = initialize_filters(dim_x, dim_z, p_idx, dt,
-                                                         init_P, var_r, var_q,
-                                                         n_var_per_dof, n_dim_per_kpt, n_kpts,
-                                                         custom_inv, mu, M)
-    ca_ukf_pred = copy.deepcopy(ca_ukf)
-    bank_pred = copy.deepcopy(bank)
-
-
-    # K-STEP AHEAD PREDICTION FILTERS (declare k dictionaries to store the time series of predicted states and covariances)
-    ca_ukf_pred = copy.deepcopy(ca_ukf)
-    uxs_ca_pred = {}
-    uxs_ca_pred_cov = {}
-    bank_pred = copy.deepcopy(bank)
-    uxs_bank_pred = {}
-    uxs_bank_pred_cov = {}
-    probs_bank_pred = {}
+                       mu, M, num_filters_in_bank,
+                       custom_inv, max_time_no_meas,
+                       filtered_column_names, filtered_pred_column_names, col_names_prob_imm):
 
     # Create dictionary to store results
     measurement_split = {}   # dictionary of DataFrames with the measurements split by task
@@ -165,6 +154,23 @@ def run_filtering_loop(subject_ids, velocities, task_names, pred_horizons,
             for velocity in velocities:
                 for task in task_names:
                     print(f'Processing {subject_id} - {velocity} - {task} for {k} steps ahead...')
+
+                    # Initialize the filters
+                    ca_ukf, cv_ukf, bank = initialize_filters(dim_x, dim_z, p_idx, dt,
+                                                              init_P, var_r, var_q,
+                                                              n_var_per_dof, n_dim_per_kpt, n_kpts,
+                                                              custom_inv, mu, M)
+                    ca_ukf_pred = copy.deepcopy(ca_ukf)
+                    bank_pred = copy.deepcopy(bank)
+
+                    # K-STEP AHEAD PREDICTION FILTERS (declare k dictionaries to store the time series of predicted states and covariances)
+                    ca_ukf_pred = copy.deepcopy(ca_ukf)
+                    uxs_ca_pred = {}
+                    uxs_ca_pred_cov = {}
+                    bank_pred = copy.deepcopy(bank)
+                    uxs_bank_pred = {}
+                    uxs_bank_pred_cov = {}
+                    probs_bank_pred = {}
 
                     # Reinitialize the lists to store the filtering results
                     uxs_ca, uxs_cv, uxs_bank, probs_bank = [], [], [], []
@@ -186,7 +192,7 @@ def run_filtering_loop(subject_ids, velocities, task_names, pred_horizons,
                     # Resample the measurements to a known frequency and subtract initial time
                     # zs = zs.resample(freq_str).mean()
                     #zs.index = zs.index - zs.index[0]
-                    zs["timestamp"] = zs["timestamp"] - zs["timestamp"].iloc[0]
+                    zs.loc[:, "timestamp"] = zs["timestamp"] - zs["timestamp"].iloc[0]
                     
                     measurement_split[(k, subject_id, velocity, task)] = zs
 
@@ -205,7 +211,7 @@ def run_filtering_loop(subject_ids, velocities, task_names, pred_horizons,
 
                     # Main loop
                     total_iterations = int((t_end - t) / t_incr) + 1
-                    pbar = tqdm(total=total_iterations)
+                    pbar = tqdm.tqdm(total=total_iterations)
 
                     # Create dictionaries to store the k-step ahead prediction results
                     if predict_k_steps:
@@ -321,7 +327,7 @@ def run_filtering_loop(subject_ids, velocities, task_names, pred_horizons,
                                     if predict_k_steps:
                                         ca_ukf_pred.x = np.nan * np.ones(dim_x)
                                         bank_pred.x = np.nan * np.ones(dim_x)
-                                        bank_pred.mu = np.nan * np.ones(NUM_FILTERS_IN_BANK) # IMM probabilities (3 filters)
+                                        bank_pred.mu = np.nan * np.ones(num_filters_in_bank) # IMM probabilities (3 filters)
 
                                     # Reset filter covariances
                                     ca_ukf.P = init_P
@@ -405,3 +411,65 @@ def run_filtering_loop(subject_ids, velocities, task_names, pred_horizons,
                     print(f"Processed {subject_id} - {velocity} - {task} for {k} steps ahead.")
 
     return measurement_split, filtering_results, prediction_results
+
+
+# Compute the average error between the filtered states and the k-step ahead predictions
+def compute_mean_error(filt, kpred, ca_states, imm_states):
+    ca_error = np.mean(filt[ca_states] - kpred[ca_states])
+    imm_error = np.mean(filt[imm_states] - kpred[imm_states])
+
+    return ca_error, imm_error
+
+
+# Compute the root mean squared error between the filtered states and the k-step ahead predictions
+def compute_rmse_error(filt, kpred, ca_states, imm_states):
+    ca_error = np.sqrt(np.mean((filt[ca_states] - kpred[ca_states])**2))
+    imm_error = np.sqrt(np.mean((filt[imm_states] - kpred[imm_states])**2))
+
+    return ca_error, imm_error
+    
+
+# Compute the average standard deviation of the error between the filtered states and the k-step ahead predictions 
+def compute_std_error(filt, kpred, ca_states, imm_states):
+    ca_error = filt[ca_states] - kpred[ca_states]
+    ca_error_mean = np.mean(ca_error)
+    ca_error_std = np.std(ca_error - ca_error_mean)
+
+    imm_error = filt[imm_states] - kpred[imm_states]
+    imm_error_mean = np.mean(imm_error)
+    imm_error_std = np.std(imm_error - imm_error_mean)
+    
+    # Average value for all states
+    ca_error_std = np.mean(ca_error_std)
+    imm_error_std = np.mean(imm_error_std)
+
+    return ca_error_std, imm_error_std
+
+
+# Compute the percentage of k-step ahead samples that fall within the band current filtered state +- 1*std
+def compute_avg_perc(filt, kpred, kpred_var, ca_states, imm_states, ca_variance_idxs, imm_variance_idxs):
+    ca_filtered_state = filt[ca_states]
+    
+    ca_std = kpred_var[ca_variance_idxs].apply(np.sqrt)
+    ca_std.columns = ca_states
+    ca_pred_lcl = kpred[ca_states] - 1 * ca_std
+    ca_pred_ucl = kpred[ca_states] + 1 * ca_std
+
+    ca_in_CI_band = (ca_filtered_state >= ca_pred_lcl) & (ca_filtered_state <= ca_pred_ucl)
+    ca_perc = 100 * np.sum(ca_in_CI_band) / len(filt.dropna())
+
+    imm_filtered_state = filt[imm_states]
+
+    imm_std = kpred_var[imm_variance_idxs].apply(np.sqrt)
+    imm_std.columns = imm_states
+    imm_pred_lcl = kpred[imm_states] - 1 * imm_std
+    imm_pred_ucl = kpred[imm_states] + 1 * imm_std
+
+    imm_in_CI_band = (imm_filtered_state >= imm_pred_lcl) & (imm_filtered_state <= imm_pred_ucl)
+    imm_perc = 100 * np.sum(imm_in_CI_band) / len(filt.dropna())
+    
+    # Average value for all states
+    ca_perc = np.mean(ca_perc)
+    imm_perc = np.mean(imm_perc)
+
+    return ca_perc, imm_perc

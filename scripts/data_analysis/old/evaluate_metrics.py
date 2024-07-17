@@ -334,10 +334,14 @@ def fx_cv(x, dt):
 
 import torch
 def custom_inv(a):
-    t = torch.from_numpy(a)
-    t = t.cuda()
-    t_inv = torch.inverse(t)
-    return t_inv.cpu().numpy()
+    # Detect if GPU is available
+    if torch.cuda.is_available():
+        t = torch.from_numpy(a)
+        t = t.cuda()
+        t_inv = torch.inverse(t)
+        return t_inv.cpu().numpy()
+    else:
+        return np.linalg.inv(a)
 
 
 def run_filtering_loop(subject_ids, velocities, task_names, pred_horizons, init_P, var_r, var_q):
