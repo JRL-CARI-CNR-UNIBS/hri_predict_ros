@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import nstep_ukf_imm_estimator as ukf_predictor
 
+pd.options.mode.chained_assignment = None  # default='warn'
 
 # ====================================================================================================
 print("\n1 / 5. Load preprocessed data...")

@@ -6,6 +6,7 @@ from filterpy.common import Q_discrete_white_noise
 from scipy.linalg import block_diag
 import copy, torch, tqdm, time
 
+pd.options.mode.chained_assignment = None  # default='warn'
 
 def get_near_psd(P, max_iter=10):
 
@@ -205,10 +206,9 @@ def run_filtering_loop(trigger_data, measurement_data,
 
                     # Initialization flag
                     time_no_meas = pd.Timedelta(seconds=0)
-                    ufk_initialized = False
+                    ukf_initialized = False
                     filt_timestamps = []
-                    elapsed_time = 0.0
-
+                    
                     # Main loop
                     total_iterations = int((t_end - t) / t_incr) + 1
                     pbar = tqdm.tqdm(total=total_iterations)
@@ -222,8 +222,8 @@ def run_filtering_loop(trigger_data, measurement_data,
                             uxs_ca_pred_cov[i] = []
                             uxs_bank_pred_cov[i] = []
 
+                    start_time = time.time()
                     while t <= t_end:
-                        tic = time.time()
                         filt_timestamps.append(t)
                         k_step_pred_executed = False
 
@@ -234,8 +234,8 @@ def run_filtering_loop(trigger_data, measurement_data,
                             z = np.double(np.array(tmp_db.iloc[-1][1:])) # Select the last measurement in the time window
                             measure_received = not np.isnan(z).any() # Consider the measurement only if it is not NaN
                             
-                        if measure_received and not ufk_initialized:
-                            # print('timestamp:', t, 'measure:', z, 'initializing filters')
+                        if measure_received and not ukf_initialized:
+                            # print(f'[timestamp: {t.total_seconds():.2f}s] Initializing filters with the first measurement.')
                             # initial state: [pos, vel, acc] = [current measured position, 0.0, 0.0]
                             ca_ukf.x = np.zeros(dim_x)
                             ca_ukf.x[p_idx] = z
@@ -244,16 +244,20 @@ def run_filtering_loop(trigger_data, measurement_data,
                             for f in bank.filters:
                                 f.x = np.zeros(dim_x)
                                 f.x[p_idx] = z
-                            ufk_initialized = True
+                            ukf_initialized = True
 
                         else:
-                            if not measure_received and ufk_initialized:
+                            if not measure_received and ukf_initialized:
                                 time_no_meas += t_incr
-                                # print('timestamp:', t, 'no measure received for', time_no_meas, 'seconds')
+                                # print(f'[timestamp: {t.total_seconds():.2f}s] No measure received for {time_no_meas.total_seconds():.2f} seconds.')
 
-                            if time_no_meas >= max_time_no_meas:
-                                ufk_initialized = False
-                            
+                            if time_no_meas >= max_time_no_meas or not ukf_initialized:
+                                if ukf_initialized:
+                                    # print(f'[timestamp: {t.total_seconds():.2f}s] No-measure-received timeout. Resetting filters.')
+                                    ukf_initialized = False
+                                # else:
+                                    # print(f'[timestamp: {t.total_seconds():.2f}s] No measure received and filters not initialized.')
+
                                 # Reset filter states
                                 ca_ukf.x = np.nan * np.ones(dim_x)
                                 cv_ukf.x = np.nan * np.ones(dim_x)
@@ -270,8 +274,10 @@ def run_filtering_loop(trigger_data, measurement_data,
                                     ca_ukf_pred.P = init_P
                                     bank_pred.P = init_P
                                 
-                            if ufk_initialized:
+                            if ukf_initialized:
                                 try:
+                                    # print(f'[timestamp: {t.total_seconds():.2f}s] Filtering and k-step-ahead prediction.')
+
                                     # make sure covariance matrices are positive semidefinite
                                     ca_ukf.P = get_near_psd(ca_ukf.P)
                                     cv_ukf.P = get_near_psd(cv_ukf.P)
@@ -318,7 +324,7 @@ def run_filtering_loop(trigger_data, measurement_data,
                                     print(f"LinAlgError: {e}")
 
                                     # Reset filters
-                                    ufk_initialized = False
+                                    ukf_initialized = False
                                         
                                     # Reset filter states
                                     ca_ukf.x = np.nan * np.ones(dim_x)
@@ -336,6 +342,9 @@ def run_filtering_loop(trigger_data, measurement_data,
                                     if predict_k_steps:
                                         ca_ukf_pred.P = init_P
                                         bank_pred.P = init_P
+
+                            else:
+                                total_iterations -= 1 # do not count the iteration if the filters are not initialized
                                 
                         uxs_ca.append(ca_ukf.x.copy())
                         uxs_cv.append(cv_ukf.x.copy())
@@ -352,14 +361,11 @@ def run_filtering_loop(trigger_data, measurement_data,
                                 uxs_ca_pred_cov[i].append(ca_ukf.P.copy().flatten())
                                 uxs_bank_pred_cov[i].append(bank.P.copy().flatten())
 
-                        t += t_incr
-                        toc = time.time()
-                        elapsed_time += (toc - tic)
-                        
+                        t += t_incr                        
                         pbar.update()
 
                     pbar.close()
-                    print("Mean loop frequency: {:.2f} Hz".format(1.0 / (elapsed_time / len(filt_timestamps))))
+                    print(f"Average loop frequency: {(total_iterations / (time.time() - start_time)):.2f} Hz")
 
                     # Create DataFrames with the filtered data
                     uxs_ca = np.array(uxs_ca)
@@ -408,7 +414,7 @@ def run_filtering_loop(trigger_data, measurement_data,
                             'kstep_pred_cov': kstep_pred_cov
                         }
 
-                    print(f"Processed {subject_id} - {velocity} - {task} for {k} steps ahead.")
+                    print(f"Processed {subject_id} - {velocity} - {task} for {k} steps ahead.\n\n")
 
     return measurement_split, filtering_results, prediction_results
 

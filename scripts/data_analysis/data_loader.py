@@ -3,6 +3,8 @@ import numpy as np
 import pandas as pd
 from tf import transformations
 
+pd.options.mode.chained_assignment = None  # default='warn'
+
 # ====================================================================================================
 print("\n1 / 5. Define parameters and load data...")
 

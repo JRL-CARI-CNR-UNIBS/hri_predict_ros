@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import nstep_ukf_imm_estimator as ukf_predictor
 
+pd.options.mode.chained_assignment = None  # default='warn'
 
 # ====================================================================================================
 print("\n1 / 5. Load preprocessed data...")
@@ -95,15 +96,15 @@ def parameter_tuning(trigger_data, measurement_data, training_subjects,
                             ca_std, imm_std = ukf_predictor.compute_std_error(filt, kpred, ca_states, imm_states)
                             ca_perc, imm_perc = ukf_predictor.compute_avg_perc(filt, kpred, kpred_var,
                                                                                ca_states, imm_states, ca_variance_idxs, imm_variance_idxs)
-                            
-                            avg_errors[task]['CA'] += ca_error
+                           
+                            avg_errors[task]['CA']  += ca_error
                             avg_errors[task]['IMM'] += imm_error
-                            avg_rmse[task]['CA'] += ca_rmse
-                            avg_rmse[task]['IMM'] += imm_rmse
-                            avg_std[task]['CA'] += ca_std
-                            avg_std[task]['IMM'] += imm_std
-                            avg_perc[task]['CA'] += ca_perc
-                            avg_perc[task]['IMM'] += imm_perc
+                            avg_rmse[task]['CA']    += ca_rmse
+                            avg_rmse[task]['IMM']   += imm_rmse
+                            avg_std[task]['CA']     += float(ca_std)
+                            avg_std[task]['IMM']    += float(imm_std)
+                            avg_perc[task]['CA']    += ca_perc
+                            avg_perc[task]['IMM']   += imm_perc
 
             # Compute the average values of these aggregated metrics
             num_sums = len(pred_horizons) * len(training_subjects) * len(velocities)
@@ -118,14 +119,14 @@ def parameter_tuning(trigger_data, measurement_data, training_subjects,
                 avg_perc[task]['IMM'] /= num_sums
 
                 # Average over all selected keypoints
-                avg_errors[task]['CA'] = np.mean(avg_errors[task]['CA'])
-                avg_errors[task]['IMM'] = np.mean(avg_errors[task]['IMM'])
-                avg_rmse[task]['CA'] = np.mean(avg_rmse[task]['CA'])
-                avg_rmse[task]['IMM'] = np.mean(avg_rmse[task]['IMM'])
-                avg_std[task]['CA'] = np.mean(avg_std[task]['CA'])
-                avg_std[task]['IMM'] = np.mean(avg_std[task]['IMM'])
-                avg_perc[task]['CA'] = np.mean(avg_perc[task]['CA'])
-                avg_perc[task]['IMM'] = np.mean(avg_perc[task]['IMM'])
+                avg_errors[task]['CA']  = float(np.mean(avg_errors[task]['CA']))
+                avg_errors[task]['IMM'] = float(np.mean(avg_errors[task]['IMM']))
+                avg_rmse[task]['CA']    = float(np.mean(avg_rmse[task]['CA']))
+                avg_rmse[task]['IMM']   = float(np.mean(avg_rmse[task]['IMM']))
+                avg_std[task]['CA']     = float(np.mean(avg_std[task]['CA']))
+                avg_std[task]['IMM']    = float(np.mean(avg_std[task]['IMM']))
+                avg_perc[task]['CA']    = float(np.mean(avg_perc[task]['CA']))
+                avg_perc[task]['IMM']   = float(np.mean(avg_perc[task]['IMM']))
 
             # Display the results aggregating results for all keypoints
             print("Average error (CA): {:.6f}, {:.6f}, {:.6f}".format(
@@ -202,7 +203,7 @@ max_time_no_meas = pd.Timedelta(seconds=1.0)
 
 # Initial uncertainty parameters for the filters
 var_r = 0.0025          # [paper: r_y] Hip: 3-sigma (99.5%) = 0.15 m ==> sigma 0.05 m ==> var = (0.05)^2 m^2
-var_q = 0.03            # [paper: q_a] a_dot = u (u = 0 is very uncertain ==> add variance here)
+var_q = 0.20            # [paper: q_a] a_dot = u (u = 0 is very uncertain ==> add variance here)
 var_P_pos = var_r       # [paper: p_y] Set equal to the measurement noise since the state is initialized with the measurement
 var_P_vel = 0.02844     # [paper: p_v] Hip: no keypoint moves faster than 1.6 m/s ==> 3-sigma (99.5%) = 1.6 m/s ==> var = (1.6/3)^2 m^2/s^2
 var_P_acc = 1.1111      # [paper: p_a] Hip: no keypoint accelerates faster than 10 m/s^2 ==> 3-sigma (99.5%) = 10 m/s^2 ==> var = (10/3)^2 m^2/s^4
@@ -217,7 +218,7 @@ M = np.array([[0.55, 0.15, 0.30], # transition matrix for the IMM estimator
 mu = np.array([0.55, 0.40, 0.05]) # initial mode probabilities for the IMM estimator
 
 # Tuning parameters
-iter_P = 1
+iter_P = 5
 iter_q = 10
 decrement_factor_q = 0.75
 decrement_factor_P = 0.5
@@ -254,11 +255,12 @@ print("\n4 / 5. Tune the *var_q* parameter. Consider the worst-case scenario, na
 
 tic = time.time()
 
-velocities = ['FAST']   # worst-case scenario
-pred_horizons = [5]     # worst-case scenario
-tasks = TASK_NAMES      # consider all tasks to get a general idea of the performance
+velocities = ['FAST']       # worst-case scenario
+pred_horizons = [5]         # worst-case scenario
+tasks = TASK_NAMES          # consider all tasks to get a general idea of the performance
+subjects = train_subjects   # consider only the IDENTIFICATION subjects
 
-parameter_tuning(trigger_data, measurement_data, train_subjects,
+parameter_tuning(trigger_data, measurement_data, subjects,
                  velocities, tasks, KEYPOINTS, DIMENSIONS_PER_KEYPOINT, pred_horizons,
                  init_P, var_r, var_q, decrement_factor_q, decrement_factor_P, iter_P, iter_q,
                  n_var_per_dof, n_dim_per_kpt, dim_x, n_kpts,
