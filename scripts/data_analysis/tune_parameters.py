@@ -35,6 +35,7 @@ def parameter_tuning(trigger_data, measurement_data, training_subjects,
                      var_P_pos, var_P_vel, var_P_acc):
     
     var_P_acc_init = var_P_acc
+    results_df = pd.DataFrame()
     
     for i in range(n_iter_q):
         for j in range(n_iter_P):
@@ -147,6 +148,21 @@ def parameter_tuning(trigger_data, measurement_data, training_subjects,
                 avg_perc['PICK-&-PLACE']['IMM'], avg_perc['WALKING']['IMM'], avg_perc['PASSING-BY']['IMM']))
             print("===============================================\n\n")
 
+            # Export results to a CSV file
+            results_iter = {'CA_error': [avg_errors['PICK-&-PLACE']['CA'], avg_errors['WALKING']['CA'], avg_errors['PASSING-BY']['CA']],
+                            'IMM_error': [avg_errors['PICK-&-PLACE']['IMM'], avg_errors['WALKING']['IMM'], avg_errors['PASSING-BY']['IMM']],
+                            'CA_RMSE': [avg_rmse['PICK-&-PLACE']['CA'], avg_rmse['WALKING']['CA'], avg_rmse['PASSING-BY']['CA']],
+                            'IMM_RMSE': [avg_rmse['PICK-&-PLACE']['IMM'], avg_rmse['WALKING']['IMM'], avg_rmse['PASSING-BY']['IMM']],
+                            'CA_std': [avg_std['PICK-&-PLACE']['CA'], avg_std['WALKING']['CA'], avg_std['PASSING-BY']['CA']],
+                            'IMM_std': [avg_std['PICK-&-PLACE']['IMM'], avg_std['WALKING']['IMM'], avg_std['PASSING-BY']['IMM']],
+                            'CA_perc': [avg_perc['PICK-&-PLACE']['CA'], avg_perc['WALKING']['CA'], avg_perc['PASSING-BY']['CA']],
+                            'IMM_perc': [avg_perc['PICK-&-PLACE']['IMM'], avg_perc['WALKING']['IMM'], avg_perc['PASSING-BY']['IMM']],
+                            'var_q': var_q,
+                            'var_P_acc': var_P_acc}
+            
+            results_df_iter = pd.DataFrame(results_iter, index=['PICK-&-PLACE', 'WALKING', 'PASSING-BY'])
+            results_df = pd.concat([results_df, results_df_iter], axis=0)
+    
             # Update the init_P parameter
             var_P_acc *= decrement_factor_P
 
@@ -155,6 +171,9 @@ def parameter_tuning(trigger_data, measurement_data, training_subjects,
 
         # Reset the var_P_acc parameter to its initial value
         var_P_acc = var_P_acc_init
+
+    # Save the results to a CSV file
+    results_df.to_csv(os.path.join(results_dir,f'results_tuning.csv'))
 
 
 # ====================================================================================================
@@ -218,7 +237,7 @@ M = np.array([[0.55, 0.15, 0.30], # transition matrix for the IMM estimator
 mu = np.array([0.55, 0.40, 0.05]) # initial mode probabilities for the IMM estimator
 
 # Tuning parameters
-iter_P = 5
+iter_P = 1
 iter_q = 10
 decrement_factor_q = 0.75
 decrement_factor_P = 0.5

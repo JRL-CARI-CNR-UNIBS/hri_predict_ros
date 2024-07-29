@@ -145,7 +145,7 @@ def evaluate_metrics(subjects, velocities, tasks, keypoints, dim_name_per_kpt,
                 'IMM_perc': [avg_perc[k]['PICK-&-PLACE']['IMM'], avg_perc[k]['WALKING']['IMM'], avg_perc[k]['PASSING-BY']['IMM']]}
     
     results_df = pd.DataFrame(results, index=['PICK-&-PLACE', 'WALKING', 'PASSING-BY'])
-    results_df.to_csv(os.path.join(results_dir,f'results_{k}.csv'))
+    results_df.to_csv(os.path.join(results_dir,f'results_{k}steps.csv'))
 
 
 # ====================================================================================================
