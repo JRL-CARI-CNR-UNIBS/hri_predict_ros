@@ -25,7 +25,7 @@ SELECTED_TASK_NAMES = ['PICK-&-PLACE'] # , 'WALKING', 'PASSING-BY']             
 TRAIN_SUBJECTS = ['sub_9', 'sub_4', 'sub_11', 'sub_7', 'sub_8', 'sub_10', 'sub_6']      # select which subjects to use for training
 TEST_SUBJECTS = ['sub_13', 'sub_12', 'sub_3']                                           # select which subjects to use for testing
 
-ONLY_USE_UPPER_BODY = True                                                              # select whether to use only upper body joints
+ONLY_USE_UPPER_BODY = False                                                              # select whether to use only upper body joints
 if ONLY_USE_UPPER_BODY:
     UPPER_BODY_FRAMES = ['arm', 'elbow', 'head']
     UPPER_BODY_KPTS = ['0','1','2','3','4','5','6','7','14','15','16','17']
@@ -55,12 +55,16 @@ DIMENSIONS_PER_KEYPOINT = {0:  ['y'],
 PRED_HORIZONS = [1, 3, 5]
 
 # Define the space in which the filter operates
-SPACE = 'cartesian'                             # 'cartesian' or 'joint'
+SPACE = 'joint'                             # 'cartesian' or 'joint'
 
 # Filter parameters
 DT = 0.1
 PREDICT_K_STEPS = True
 N_VAR_PER_JOINT = 3                             # position, velocity, acceleration
+N_PARAM = 8                                     # (shoulder_distance, chest_hip_distance, hip_distance,
+                                                # upper_arm_length, lower_arm_length,
+                                                # upper_leg_length, lower_leg_length,
+                                                # head_distance)
 N_VAR_PER_KPT = 3                               # position, velocity, acceleration
 N_DIM_PER_KPT = 3                               # x, y, z
 MAX_TIME_NO_MEAS = pd.Timedelta(seconds= 0.1)   # maximum time without measurements before resetting the filter
@@ -78,6 +82,7 @@ elif SPACE == 'joint':
                         # Moreover: which subject to use for the MonteCarlo? All subjects? Only the training subjects? The body parameters are different for each subject.
     INIT_VAR_VEL = 0.01 #TODO: to tune
     INIT_VAR_ACC = 0.01 #TODO: to tune
+    INIT_VAR_PARAM = 0.1 #TODO: to tune
 else:
     ValueError("SPACE must be either 'cartesian' or 'joint'.")
 
@@ -180,14 +185,22 @@ if SPACE == 'cartesian':
 elif SPACE == 'joint':
     dim_x = N_VAR_PER_JOINT * N_JOINTS
     p_idx = np.arange(0, dim_x, N_VAR_PER_JOINT) # position indices
+    param_idx = range(dim_x, dim_x+N_PARAM)
+    dim_x += N_PARAM # the body params are states tracked by the filter
 else:
     ValueError("SPACE must be either 'cartesian' or 'joint'.")
 
 # Define the dimensionality of the measurement space for the filter
 dim_z = N_DIM_PER_KPT * N_KPTS
-
+print(f"dim_x: {dim_x}, dim_z: {dim_z}")
 # Initialize the state covariance matrix
-init_P = ukf_predictor.initialize_P(N_VAR_PER_KPT, N_DIM_PER_KPT, N_KPTS, INIT_VAR_POS, INIT_VAR_VEL, INIT_VAR_ACC)
+if SPACE == 'cartesian':
+    init_P = ukf_predictor.initialize_P(N_VAR_PER_KPT, N_DIM_PER_KPT, N_KPTS, INIT_VAR_POS, INIT_VAR_VEL, INIT_VAR_ACC)
+elif SPACE == 'joint':
+    init_P = ukf_predictor.initialize_P(N_VAR_PER_KPT, N_DIM_PER_KPT, N_KPTS, INIT_VAR_POS, INIT_VAR_VEL, INIT_VAR_ACC,
+                                        space=SPACE, var_P_param=INIT_VAR_PARAM, n_param=N_PARAM, n_joints=N_JOINTS)
+else:
+    ValueError("SPACE must be either 'cartesian' or 'joint'.")
 
 # Define the column names for the filtered and predicted data
 # CARTESIAN SPACE: always done
@@ -210,6 +223,8 @@ if SPACE == 'joint':
                                         for filt_type in ['ca', 'imm']
                                         for joint in column_names['conf_names_filt']
                                         for suffix in ['pos', 'vel', 'acc']]
+    filtered_param_names = column_names['param_names']
+    filtered_pred_param_names = column_names['param_names']
     
 # Define column names for the filtered and predicted data
 if SPACE == 'cartesian':
@@ -222,13 +237,16 @@ elif SPACE == 'joint':
         'filtered_column_names': filtered_column_names,
         'filtered_pred_column_names': filtered_pred_column_names,
         'filtered_joint_column_names': filtered_joint_column_names,
-        'filtered_pred_joint_column_names': filtered_pred_joint_column_names
+        'filtered_pred_joint_column_names': filtered_pred_joint_column_names,
+        'filtered_param_names': filtered_param_names,
+        'filtered_pred_param_names': filtered_pred_param_names
+
     }
 else:
     raise ValueError("SPACE must be either 'cartesian' or 'joint'.")
 
 
-# ====================================================================================================
+# ====================================================================================================================================
 print("\n4 / 5. Evaluate error metrics for all filters for the IDENTIFICATION subjects...")
 
 tic = time.time()
@@ -241,6 +259,7 @@ _, train_filtering_results, train_prediction_results = ukf_predictor.run_filteri
     INIT_MU, M, NUM_FILTERS_IN_BANK,
     ukf_predictor.custom_inv, MAX_TIME_NO_MEAS, PROB_IMM_COLUMN_NAMES,
     space=SPACE,
+    param_idx=param_idx,
     **output_column_names
 )
 
@@ -257,7 +276,7 @@ minutes, seconds = divmod(toc - tic, 60)
 print(f"[IDENTIFICATION] Metrics evaluation took {minutes:.0f} minutes and {seconds:.2f} seconds.")
 
 
-# ====================================================================================================
+# ====================================================================================================================================
 print("\n5 / 5. Evaluate error metrics for all filters for the VALIDATION subjects...")
 
 tic = time.time()

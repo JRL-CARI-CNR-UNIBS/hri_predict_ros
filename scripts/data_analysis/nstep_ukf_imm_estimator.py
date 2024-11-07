@@ -5,7 +5,7 @@ from filterpy.kalman import IMMEstimator
 from filterpy.common import Q_discrete_white_noise
 from scipy.linalg import block_diag
 import os, copy, torch, tqdm, time
-import human_kinematic_model as hkm # human kinematic model
+import human_model_binding as hkm # human kinematic model
 
 pd.options.mode.chained_assignment = None  # default='warn'
 
@@ -54,17 +54,39 @@ def get_near_psd(P, max_iter=10):
 
 
 # Initial covariance matrix for all keypoints
-def initialize_P(n_var_per_dof, n_dim_per_kpt, n_kpts, var_P_pos, var_P_vel, var_P_acc):
-    if n_var_per_dof == 1:
-        init_P = np.eye(n_dim_per_kpt * n_kpts) * var_P_pos
-    elif n_var_per_dof == 2:
-        init_P = np.diag([var_P_pos, var_P_vel]) # initial state covariance for the single keypoint
-        init_P = block_diag(*[init_P for _ in range(n_dim_per_kpt * n_kpts)])
-    elif n_var_per_dof == 3:
-        init_P = np.diag([var_P_pos, var_P_vel, var_P_acc]) # initial state covariance for the single keypoint
-        init_P = block_diag(*[init_P for _ in range(n_dim_per_kpt * n_kpts)])
-    else:
-        raise ValueError('Invalid n_var_per_dof')
+def initialize_P(n_var_per_dof, n_dim_per_kpt, n_kpts, var_P_pos, var_P_vel, var_P_acc,
+                 space='cartesian', var_P_param= None, n_param=None, n_joints=None):
+    if space == 'cartesian':
+        if n_var_per_dof == 1:
+            init_P = np.eye(n_dim_per_kpt * n_kpts) * var_P_pos
+        elif n_var_per_dof == 2:
+            init_P = np.diag([var_P_pos, var_P_vel]) # initial state covariance for the single keypoint
+            init_P = block_diag(*[init_P for _ in range(n_dim_per_kpt * n_kpts)])
+        elif n_var_per_dof == 3:
+            init_P = np.diag([var_P_pos, var_P_vel, var_P_acc]) # initial state covariance for the single keypoint
+            init_P = block_diag(*[init_P for _ in range(n_dim_per_kpt * n_kpts)])
+        else:
+            raise ValueError('Invalid n_var_per_dof')
+    
+    elif space == 'joint'and var_P_param is not None and n_param is not None and n_joints is not None:
+
+        if n_var_per_dof == 1:
+            init_P = np.eye(n_joints) * var_P_pos
+        elif n_var_per_dof == 2:
+            init_P = np.diag([var_P_pos, var_P_vel]) # initial state covariance for the single joint
+            init_P = block_diag(*[init_P for _ in range(n_joints)])
+        elif n_var_per_dof == 3:
+            init_P = np.diag([var_P_pos, var_P_vel, var_P_acc]) # initial state covariance for the single joint
+            init_P = block_diag(*[init_P for _ in range(n_joints)])
+        else:
+            raise ValueError('Invalid n_var_per_dof')
+
+        param_P = np.eye(n_param) * var_P_param
+        init_P = np.block([
+            [init_P, np.zeros((init_P.shape[0], n_param))],
+            [np.zeros((n_param, init_P.shape[1])), param_P]
+        ])
+
     return init_P
 
 
@@ -78,24 +100,26 @@ def initialize_filters(dim_x, dim_z, p_idx, dt,
     assert (human_kinematic_model is not None) if space == 'joint' else True, "Human kinematic model must be provided for joint space."
     
     # measurement function: only the position is measured
-    def hx(x: np.ndarray):
+    def hx(x: np.ndarray, param: np.ndarray):
         if space == 'cartesian':
             return x[p_idx]
         elif space == 'joint' and human_kinematic_model is not None:
-            kpts = human_kinematic_model.forward_kinematics(
-                human_kinematic_model.x,
-                human_kinematic_model.param
-            )
-            return kpts
+            kp_in_ext = hkm.Keypoints()
+            human_kinematic_model.forward_kinematics(x, param, kp_in_ext)
+            return kp_in_ext.get_keypoints()
 
     # Sigma points for the UKF
     sigmas = MerweScaledSigmaPoints(n=dim_x, alpha=.1, beta=2., kappa=1.)
+
+    n_blocks = int(dim_x / n_var_per_dof)
 
     # CONSTANT ACCELERATION UKF
     F_block_ca = np.array([[1, dt, 0.5*dt**2],
                            [0, 1, dt],
                            [0, 0, 1]])
-    F_ca = block_diag(*[F_block_ca for _ in range(n_dim_per_kpt * n_kpts)])
+    F_ca = block_diag(*[F_block_ca for _ in range(len(p_idx))])
+
+    !!! QUI BISOGNA AGGIUNGERE LA MATRICE IDENTITA' PER I PARAMETRI !!!
 
     def fx_ca(x: np.ndarray, dt: float) -> np.ndarray:
         return F_ca @ x
@@ -104,7 +128,7 @@ def initialize_filters(dim_x, dim_z, p_idx, dt,
     ca_ukf.x = np.nan * np.ones(dim_x)
     ca_ukf.P = init_P
     ca_ukf.R = np.eye(dim_z)* var_r
-    ca_ukf.Q = Q_discrete_white_noise(dim=n_var_per_dof, dt=dt, var=var_q, block_size=n_dim_per_kpt * n_kpts)
+    ca_ukf.Q = Q_discrete_white_noise(dim=n_var_per_dof, dt=dt, var=var_q, block_size=len(p_idx)) !!! QUI BISOGNA AGGIUNGERE LA MATRICE IDENTITA' PER I PARAMETRI !!!
     ca_ukf.inv = custom_inv
 
     # CONSTANT ACCELERATION UKF WITH NO PROCESS ERROR
@@ -115,7 +139,9 @@ def initialize_filters(dim_x, dim_z, p_idx, dt,
     F_block_cv = np.array([[1, dt, 0],
                            [0, 1, 0],
                            [0, 0, 0]])
-    F_cv = block_diag(*[F_block_cv for _ in range(n_dim_per_kpt * n_kpts)])
+    F_cv = block_diag(*[F_block_cv for _ in range(len(p_idx))])
+
+    !!! QUI BISOGNA AGGIUNGERE LA MATRICE IDENTITA' PER I PARAMETRI !!!
 
     # state transition function: const velocity
     def fx_cv(x: np.ndarray, dt: float) -> np.ndarray:
@@ -125,7 +151,7 @@ def initialize_filters(dim_x, dim_z, p_idx, dt,
     cv_ukf.x = np.nan * np.ones(dim_x)
     cv_ukf.P = init_P
     cv_ukf.R = np.eye(dim_z)* var_r
-    cv_ukf.Q = Q_discrete_white_noise(dim=n_var_per_dof, dt=dt, var=var_q, block_size=n_dim_per_kpt * n_kpts)
+    cv_ukf.Q = Q_discrete_white_noise(dim=n_var_per_dof, dt=dt, var=var_q, block_size=len(p_idx)) !!! QUI BISOGNA AGGIUNGERE LA MATRICE IDENTITA' PER I PARAMETRI !!!
     ca_ukf.inv = custom_inv
 
     # IMM ESTIMATOR
@@ -616,7 +642,8 @@ def run_filtering_loop_joints(X_train_list, time_train_list, train_traj_idx,
                               init_P, var_r, var_q,
                               mu, M, num_filters_in_bank,
                               custom_inv, max_time_no_meas,
-                              prob_imm_col_names, space='cartesian', **kwargs):
+                              prob_imm_col_names,
+                              space='cartesian', param_idx=None, **kwargs):
     
     assert space in ['cartesian', 'joint'], "Invalid space. Choose between 'cartesian' and 'joint'."
     
@@ -627,6 +654,8 @@ def run_filtering_loop_joints(X_train_list, time_train_list, train_traj_idx,
     if space == 'joint':
         filt_joint_col_names = kwargs.get('filt_joint_col_names', [])
         filt_pred_joint_col_names = kwargs.get('filt_pred_joint_col_names', [])
+        filt_param_col_names = kwargs.get('filt_param_col_names', [])
+        filt_pred_param_col_names = kwargs.get('filt_pred_param_col_names', [])
 
     # Create dictionary to store results
     measurement_split = {}   # dictionary of DataFrames with the measurements split by task
@@ -641,7 +670,19 @@ def run_filtering_loop_joints(X_train_list, time_train_list, train_traj_idx,
 
             # Create a HumanBodyModel object if the space is 'joint'
             if space == 'joint':
-                body_model = hkm.HumanProcess(sampling_time=dt)
+                body_model = hkm.Human28DOF()
+
+                # Initialize joint limits
+                qbounds = [hkm.JointLimits(-np.pi, np.pi)]*28
+
+                # Set the shoulder rot y joint limits
+                qbounds[12] = hkm.JointLimits(-np.pi/2, np.pi/2) # right shoulder
+                qbounds[16] = hkm.JointLimits(-np.pi/2, np.pi/2) # left shoulder
+                qbounds[20] = hkm.JointLimits(-np.pi/2, np.pi/2) # right hip
+                qbounds[24] = hkm.JointLimits(-np.pi/2, np.pi/2) # left hip
+
+                # Initialize Keypoints object
+                kp_in_ext = hkm.Keypoints()
 
             # Initialize the filters
             ca_ukf, cv_ukf, bank = initialize_filters(dim_x, dim_z, p_idx, dt,
@@ -713,20 +754,45 @@ def run_filtering_loop_joints(X_train_list, time_train_list, train_traj_idx,
                     
                 if space == 'joint':
                     if measure_received:
+                        kpts = {
+                            "head":           z[0:3],
+                            "left_shoulder":  z[3:6],
+                            "left_elbow":     z[6:9],
+                            "left_wrist":     z[9:12],
+                            "left_hip":       z[12:15],
+                            "left_knee":      z[15:18],
+                            "left_ankle":     z[18:21],
+                            "right_shoulder": z[21:24],
+                            "right_elbow":    z[24:27],
+                            "right_wrist":    z[27:30],
+                            "right_hip":      z[30:33],
+                            "right_knee":     z[33:36],
+                            "right_ankle":    z[36:39]
+                        }
+
+                        kp_in_ext.set_keypoints(kpts)
+                        
                         # Update the HumanBodyModel with the current joint angles
-                        q, param = body_model.inverse_kinematics(z) #TODO: PARAM NOT USED, BUT SHOULD BE INCLUDED IN THE FILTER
-                        body_model.x = q
+                        q = np.zeros(28)
+                        param = np.zeros(8)
+                        q, param = body_model.inverse_kinematics(kp_in_ext, qbounds, q, param)
 
                 if measure_received and not ukf_initialized:
                     # print(f'[timestamp: {t.total_seconds():.2f}s] Initializing filters with the first measurement.')
                     # initial state: [pos, vel, acc] = [current measured position, 0.0, 0.0]
                     ca_ukf.x = np.zeros(dim_x)
                     ca_ukf.x[p_idx] = (z if space == 'cartesian' else q)
+                    if space == 'joint':
+                        ca_ukf.x[param_idx] = param 
                     cv_ukf.x = np.zeros(dim_x)
                     cv_ukf.x[p_idx] = (z if space == 'cartesian' else q)
+                    if space == 'joint':
+                        cv_ukf.x[param_idx] = param 
                     for f in bank.filters:
                         f.x = np.zeros(dim_x)
                         f.x[p_idx] = (z if space == 'cartesian' else q)
+                        if space == 'joint':
+                            f.x[param_idx] = param 
                     ukf_initialized = True
 
                 else:
@@ -846,7 +912,7 @@ def run_filtering_loop_joints(X_train_list, time_train_list, train_traj_idx,
 
                 if space == 'joint':
                     pass
-                    # Create HumanProcess to convert filter states to joint space using inverse kinematics
+                    # Create HumanProcess to convert filter states (joints) to key points using direct kinematics
                     # model = hkm.HumanProcess(
                     # Convert filter states to cartesian space using inverse kinematics
 
