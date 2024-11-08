@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
-from filterpy.kalman import UnscentedKalmanFilter, MerweScaledSigmaPoints
-from filterpy.kalman import IMMEstimator
+from filterpy.kalman import UnscentedKalmanFilter, MerweScaledSigmaPoints, IMMEstimator, unscented_transform
 from filterpy.common import Q_discrete_white_noise
 from scipy.linalg import block_diag
 import os, copy, torch, tqdm, time
@@ -94,7 +93,7 @@ def initialize_filters(dim_x, dim_z, p_idx, dt,
                        init_P, var_r, var_q,
                        n_var_per_dof, n_dim_per_kpt, n_kpts,
                        custom_inv, mu, M,
-                       space='cartesian', human_kinematic_model=None):
+                       space='cartesian', human_kinematic_model=None, n_param=None):
     
     assert space in ['cartesian', 'joint'], "Invalid space. Choose between 'cartesian' or 'joint'."
     assert (human_kinematic_model is not None) if space == 'joint' else True, "Human kinematic model must be provided for joint space."
@@ -111,16 +110,19 @@ def initialize_filters(dim_x, dim_z, p_idx, dt,
     # Sigma points for the UKF
     sigmas = MerweScaledSigmaPoints(n=dim_x, alpha=.1, beta=2., kappa=1.)
 
-    n_blocks = int(dim_x / n_var_per_dof)
-
     # CONSTANT ACCELERATION UKF
     F_block_ca = np.array([[1, dt, 0.5*dt**2],
                            [0, 1, dt],
                            [0, 0, 1]])
     F_ca = block_diag(*[F_block_ca for _ in range(len(p_idx))])
 
-    !!! QUI BISOGNA AGGIUNGERE LA MATRICE IDENTITA' PER I PARAMETRI !!!
-
+    # Append the identity matrix block for the parameters to F_ca
+    if space == 'joint' and n_param is not None:
+        F_ca = np.block([
+            [F_ca, np.zeros((F_ca.shape[0], n_param))],
+            [np.zeros((n_param, F_ca.shape[1])), np.eye(n_param)]
+        ])
+    
     def fx_ca(x: np.ndarray, dt: float) -> np.ndarray:
         return F_ca @ x
 
@@ -128,7 +130,12 @@ def initialize_filters(dim_x, dim_z, p_idx, dt,
     ca_ukf.x = np.nan * np.ones(dim_x)
     ca_ukf.P = init_P
     ca_ukf.R = np.eye(dim_z)* var_r
-    ca_ukf.Q = Q_discrete_white_noise(dim=n_var_per_dof, dt=dt, var=var_q, block_size=len(p_idx)) !!! QUI BISOGNA AGGIUNGERE LA MATRICE IDENTITA' PER I PARAMETRI !!!
+    ca_ukf.Q = Q_discrete_white_noise(dim=n_var_per_dof, dt=dt, var=var_q, block_size=len(p_idx))
+    if space == 'joint' and n_param is not None:
+        ca_ukf.Q = np.block([
+            [ca_ukf.Q, np.zeros((ca_ukf.Q.shape[0], n_param))],
+            [np.zeros((n_param, ca_ukf.Q.shape[1])), np.eye(n_param)*var_q]
+        ])
     ca_ukf.inv = custom_inv
 
     # CONSTANT ACCELERATION UKF WITH NO PROCESS ERROR
@@ -141,7 +148,12 @@ def initialize_filters(dim_x, dim_z, p_idx, dt,
                            [0, 0, 0]])
     F_cv = block_diag(*[F_block_cv for _ in range(len(p_idx))])
 
-    !!! QUI BISOGNA AGGIUNGERE LA MATRICE IDENTITA' PER I PARAMETRI !!!
+    # Append the identity matrix block for the parameters to F_ca
+    if space == 'joint' and n_param is not None:
+        F_cv = np.block([
+            [F_cv, np.zeros((F_cv.shape[0], n_param))],
+            [np.zeros((n_param, F_cv.shape[1])), np.eye(n_param)]
+        ])
 
     # state transition function: const velocity
     def fx_cv(x: np.ndarray, dt: float) -> np.ndarray:
@@ -151,8 +163,13 @@ def initialize_filters(dim_x, dim_z, p_idx, dt,
     cv_ukf.x = np.nan * np.ones(dim_x)
     cv_ukf.P = init_P
     cv_ukf.R = np.eye(dim_z)* var_r
-    cv_ukf.Q = Q_discrete_white_noise(dim=n_var_per_dof, dt=dt, var=var_q, block_size=len(p_idx)) !!! QUI BISOGNA AGGIUNGERE LA MATRICE IDENTITA' PER I PARAMETRI !!!
-    ca_ukf.inv = custom_inv
+    cv_ukf.Q = Q_discrete_white_noise(dim=n_var_per_dof, dt=dt, var=var_q, block_size=len(p_idx))
+    if space == 'joint' and n_param is not None:
+        cv_ukf.Q = np.block([
+            [cv_ukf.Q, np.zeros((cv_ukf.Q.shape[0], n_param))],
+            [np.zeros((n_param, cv_ukf.Q.shape[1])), np.eye(n_param)*var_q]
+        ])
+    cv_ukf.inv = custom_inv
 
     # IMM ESTIMATOR
     filters = [copy.deepcopy(ca_ukf), ca_no_ukf, copy.deepcopy(cv_ukf)]
@@ -643,19 +660,19 @@ def run_filtering_loop_joints(X_train_list, time_train_list, train_traj_idx,
                               mu, M, num_filters_in_bank,
                               custom_inv, max_time_no_meas,
                               prob_imm_col_names,
-                              space='cartesian', param_idx=None, **kwargs):
+                              output_col_names,
+                              space='cartesian', param_idx=np.array([])):
     
     assert space in ['cartesian', 'joint'], "Invalid space. Choose between 'cartesian' and 'joint'."
     
-    # Access column names lists with default values
-    prob_imm_col_names = kwargs.get('prob_imm_col_names', [])
-    filt_col_names = kwargs.get('filt_col_names', [])
-    filt_pred_col_names = kwargs.get('filt_pred_col_names', [])
+    # Get the column names for the filtered and predicted states
+    filt_col_names = output_col_names['filtered_column_names']
+    filt_pred_col_names = output_col_names['filtered_pred_column_names']
     if space == 'joint':
-        filt_joint_col_names = kwargs.get('filt_joint_col_names', [])
-        filt_pred_joint_col_names = kwargs.get('filt_pred_joint_col_names', [])
-        filt_param_col_names = kwargs.get('filt_param_col_names', [])
-        filt_pred_param_col_names = kwargs.get('filt_pred_param_col_names', [])
+        filt_joint_col_names = output_col_names['filtered_joint_column_names']
+        filt_pred_joint_col_names = output_col_names['filtered_pred_joint_column_names']
+        filt_param_col_names = output_col_names['filtered_param_names']
+        filt_pred_param_col_names = output_col_names['filtered_pred_param_names']
 
     # Create dictionary to store results
     measurement_split = {}   # dictionary of DataFrames with the measurements split by task
@@ -689,7 +706,7 @@ def run_filtering_loop_joints(X_train_list, time_train_list, train_traj_idx,
                                                       init_P, var_r, var_q,
                                                       n_var_per_dof, n_dim_per_kpt, n_kpts,
                                                       custom_inv, mu, M,
-                                                      space=space, human_kinematic_model=body_model)
+                                                      space=space, human_kinematic_model=body_model, n_param=len(param_idx))
             ca_ukf_pred = copy.deepcopy(ca_ukf)
             bank_pred = copy.deepcopy(bank)
 
@@ -702,9 +719,20 @@ def run_filtering_loop_joints(X_train_list, time_train_list, train_traj_idx,
             uxs_bank_pred_cov = {}
             probs_bank_pred = {}
 
+            if space == 'joint':
+                uxs_ca_kpt_pred = {}
+                uxs_bank_kpt_pred = {}
+                uxs_ca_kpt_pred_cov = {}
+                uxs_bank_kpt_pred_cov = {}
+
             # Reinitialize the lists to store the filtering results
             uxs_ca, uxs_cv, uxs_bank, probs_bank = [], [], [], []
             uxs_ca_cov, uxs_bank_cov = [], []
+
+            if space == 'joint':
+                uxs_ca_kpt, uxs_cv_kpt, uxs_bank_kpt = [], [], []
+                uxs_ca_kpt_cov, uxs_bank_kpt_cov = [], []
+
 
             # Get the measurements
             meas = X_train_list[traj_idx]
@@ -739,6 +767,12 @@ def run_filtering_loop_joints(X_train_list, time_train_list, train_traj_idx,
                     probs_bank_pred[i] = []
                     uxs_ca_pred_cov[i] = []
                     uxs_bank_pred_cov[i] = []
+
+                    if space == 'joint':
+                        uxs_ca_kpt_pred[i] = []
+                        uxs_bank_kpt_pred[i] = []
+                        uxs_ca_kpt_pred_cov[i] = []
+                        uxs_bank_kpt_pred_cov[i] = []
 
             start_time = time.time()
             while t <= t_end:
@@ -839,9 +873,16 @@ def run_filtering_loop_joints(X_train_list, time_train_list, train_traj_idx,
 
                             if measure_received:
                                 time_no_meas = pd.Timedelta(seconds=0)
-                                ca_ukf.update(z)
-                                cv_ukf.update(z)
-                                bank.update(z)
+                                if space == 'cartesian':
+                                    ca_ukf.update(z)
+                                    cv_ukf.update(z)
+                                    bank.update(z)
+                                elif space == 'joint':
+                                    ca_ukf.update(z, R=None, UT=None, hx=None, param=param)
+                                    cv_ukf.update(z, R=None, UT=None, hx=None, param=param)
+                                    bank.update(z, param=param)
+                                else:
+                                    raise ValueError("Invalid space. Choose between 'cartesian' and 'joint'.")
 
                             if predict_k_steps:
                                 # Predict k steps ahead starting from the current state and covariance
@@ -866,6 +907,18 @@ def run_filtering_loop_joints(X_train_list, time_train_list, train_traj_idx,
                                     probs_bank_pred[i].append(bank_pred.mu.copy())
                                     uxs_ca_pred_cov[i].append(ca_ukf_pred.P.copy().flatten())
                                     uxs_bank_pred_cov[i].append(bank_pred.P.copy().flatten())
+
+                                    if space == 'joint':
+                                        # Propagate the covariance matrices from joint space to Cartesian space
+                                        ca_ukf_pred_kpt, ca_ukf_pred_kpt_cov = \
+                                            propagate_covariance(dim_x, dim_z, ca_ukf, body_model, p_idx, param_idx)
+                                        bank_pred_kpt, bank_pred_kpt_cov = \
+                                            propagate_covariance(dim_x, dim_z, bank, body_model, p_idx, param_idx)
+                                        
+                                        uxs_ca_kpt_pred[i].append(ca_ukf_pred_kpt)
+                                        uxs_bank_kpt_pred[i].append(bank_pred_kpt)
+                                        uxs_ca_kpt_pred_cov[i].append(ca_ukf_pred_kpt_cov.flatten())
+                                        uxs_bank_kpt_pred_cov[i].append(bank_pred_kpt_cov.flatten())
 
                                 k_step_pred_executed = True
 
@@ -895,7 +948,7 @@ def run_filtering_loop_joints(X_train_list, time_train_list, train_traj_idx,
                     else:
                         total_iterations -= 1 # do not count the iteration if the filters are not initialized
                         
-
+                # Save the filtered states and covariances
                 ca_ukf_state = ca_ukf.x.copy()
                 cv_ukf_state = cv_ukf.x.copy()
                 bank_state = bank.x.copy()
@@ -903,6 +956,15 @@ def run_filtering_loop_joints(X_train_list, time_train_list, train_traj_idx,
                 ca_ukf_cov = ca_ukf.P.copy().flatten()
                 bank_cov = bank.P.copy().flatten()
 
+                if space == 'joint':
+                    # Propagate the covariance matrices from joint space to Cartesian space
+                    ca_ukf_kpt, ca_ukf_kpt_cov = propagate_covariance(dim_x, dim_z, ca_ukf, body_model, p_idx, param_idx)
+                    ca_ukf_kpt_cov = ca_ukf_kpt_cov.flatten()
+                    cv_ukf_kpt, _ = propagate_covariance(dim_x, dim_z, cv_ukf, body_model, p_idx, param_idx)
+                    bank_kpt, bank_kpt_cov = propagate_covariance(dim_x, dim_z, bank, body_model, p_idx, param_idx)
+                    bank_kpt_cov = bank_kpt_cov.flatten()
+
+                # Store the filtered states and covariances
                 uxs_ca.append(ca_ukf_state)
                 uxs_cv.append(cv_ukf_state)
                 uxs_bank.append(bank_state)
@@ -911,12 +973,11 @@ def run_filtering_loop_joints(X_train_list, time_train_list, train_traj_idx,
                 uxs_bank_cov.append(bank_cov)
 
                 if space == 'joint':
-                    pass
-                    # Create HumanProcess to convert filter states (joints) to key points using direct kinematics
-                    # model = hkm.HumanProcess(
-                    # Convert filter states to cartesian space using inverse kinematics
-
-
+                    uxs_ca_kpt.append(ca_ukf_kpt)
+                    uxs_cv_kpt.append(cv_ukf_kpt)
+                    uxs_bank_kpt.append(bank_kpt)
+                    uxs_ca_kpt_cov.append(ca_ukf_kpt_cov)
+                    uxs_bank_kpt_cov.append(bank_kpt_cov)
 
                 if not k_step_pred_executed:
                     for i in range(k):
@@ -926,36 +987,100 @@ def run_filtering_loop_joints(X_train_list, time_train_list, train_traj_idx,
                         uxs_ca_pred_cov[i].append(ca_ukf.P.copy().flatten())
                         uxs_bank_pred_cov[i].append(bank.P.copy().flatten())
 
+                        if space == 'joint':
+                            uxs_ca_kpt_pred[i].append(ca_ukf_kpt)
+                            uxs_bank_kpt_pred[i].append(bank_kpt)
+                            uxs_ca_kpt_pred_cov[i].append(ca_ukf_kpt_cov)
+                            uxs_bank_kpt_pred_cov[i].append(bank_kpt_cov)
+
                 t += t_incr                        
                 pbar.update()
 
             pbar.close()
             print(f"Average loop frequency: {(total_iterations / (time.time() - start_time)):.2f} Hz")
 
-            # Create DataFrames with the filtered data
+
+            # Convert the lists to numpy arrays
             uxs_ca = np.array(uxs_ca)
             uxs_cv = np.array(uxs_cv)
             uxs_bank = np.array(uxs_bank)
-            uxs = np.concatenate((uxs_ca, uxs_cv, uxs_bank), axis=1)
             probs_bank = np.array(probs_bank)
             uxs_ca_cov = np.array(uxs_ca_cov)
             uxs_bank_cov = np.array(uxs_bank_cov)
-            uxs_cov = np.concatenate((uxs_ca_cov, uxs_bank_cov), axis=1)
 
-            filtered_data = pd.DataFrame(uxs, index=filt_timestamps, columns=filt_col_names)
+            if space == 'joint':
+                uxs_ca_kpt = np.array(uxs_ca_kpt)
+                uxs_cv_kpt = np.array(uxs_cv_kpt)
+                uxs_bank_kpt = np.array(uxs_bank_kpt)
+                uxs_ca_kpt_cov = np.array(uxs_ca_kpt_cov)
+                uxs_bank_kpt_cov = np.array(uxs_bank_kpt_cov)
+
+            if space == 'cartesian':
+                uxs = np.concatenate((uxs_ca, uxs_cv, uxs_bank), axis=1)
+                uxs_cov = np.concatenate((uxs_ca_cov, uxs_bank_cov), axis=1)
+            elif space == 'joint':
+                uxs = np.concatenate((uxs_ca, uxs_cv, uxs_bank, uxs_ca_kpt, uxs_cv_kpt, uxs_bank_kpt), axis=1)
+                uxs_cov = np.concatenate((uxs_ca_cov, uxs_bank_cov, uxs_ca_kpt_cov, uxs_bank_kpt_cov), axis=1)
+            else:
+                raise ValueError("Invalid space. Choose between 'cartesian' and 'joint'.")
+            
+
+            # Create DataFrames with the filtered data
+            if space == 'cartesian':
+                filtered_data = pd.DataFrame(uxs, index=filt_timestamps, columns=filt_col_names)
+            elif space == 'joint':
+                # Split filt_joint_col_names into three portions
+                ca_cols = [col for col in filt_joint_col_names if col.startswith('ca_')]
+                cv_cols = [col for col in filt_joint_col_names if col.startswith('cv_')]
+                imm_cols = [col for col in filt_joint_col_names if col.startswith('imm_')]
+
+                ca_kpt_cols = [col for col in filt_col_names if col.startswith('ca_') and not col.endswith('d')]
+                cv_kpt_cols = [col for col in filt_col_names if col.startswith('cv_') and not col.endswith('d')]
+                imm_kpt_cols = [col for col in filt_col_names if col.startswith('imm_') and not col.endswith('d')]
+
+                # Combine the portions with filt_param_col_names in between
+                combined_cols = ca_cols + filt_param_col_names + cv_cols + filt_param_col_names + imm_cols + filt_param_col_names \
+                                + ca_kpt_cols + cv_kpt_cols + imm_kpt_cols
+                filtered_data = pd.DataFrame(uxs, index=filt_timestamps, columns=combined_cols)
+            else:
+                raise ValueError("Invalid space. Choose between 'cartesian' and 'joint'.")
+
             imm_probs = pd.DataFrame(probs_bank, index=filt_timestamps, columns=prob_imm_col_names)
             filtered_data_cov = pd.DataFrame(uxs_cov, index=filt_timestamps) # the elements of the flattened covariance matrices are stored in separate anonymous columns
 
+
+            # Create DataFrames with the k-step ahead prediction data if predict_k_steps is True
             if predict_k_steps:
                 kstep_pred_data = {}
                 kstep_pred_imm_probs = {}
                 kstep_pred_cov = {}
 
                 for i in range(k):
-                    uxs_pred = np.concatenate((np.array(uxs_ca_pred[i]), np.array(uxs_bank_pred[i])), axis=1)
-                    uxs_pred_cov = np.concatenate((np.array(uxs_ca_pred_cov[i]), np.array(uxs_bank_pred_cov[i])), axis=1)
+                    if space == 'cartesian':
+                        uxs_pred = np.concatenate((np.array(uxs_ca_pred[i]), np.array(uxs_bank_pred[i])), axis=1)
+                        uxs_pred_cov = np.concatenate((np.array(uxs_ca_pred_cov[i]), np.array(uxs_bank_pred_cov[i])), axis=1)
+                        kstep_pred_data[i] = pd.DataFrame(uxs_pred, index=filt_timestamps, columns=filt_pred_col_names)
 
-                    kstep_pred_data[i] = pd.DataFrame(uxs_pred, index=filt_timestamps, columns=filt_pred_col_names)
+                    elif space == 'joint':
+                        uxs_pred = np.concatenate((np.array(uxs_ca_pred[i]), np.array(uxs_bank_pred[i]), 
+                                                   np.array(uxs_ca_kpt_pred[i]), np.array(uxs_bank_kpt_pred[i])), axis=1)
+                        uxs_pred_cov = np.concatenate((np.array(uxs_ca_pred_cov[i]), np.array(uxs_bank_pred_cov[i]),
+                                                       np.array(uxs_ca_kpt_pred_cov[i]), np.array(uxs_bank_kpt_pred_cov[i])), axis=1)
+
+                        # Split filt_joint_col_names into three portions
+                        ca_cols = [col for col in filt_pred_joint_col_names if col.startswith('ca_')]
+                        imm_cols = [col for col in filt_pred_joint_col_names if col.startswith('imm_')]
+
+                        ca_kpt_cols = [col for col in filt_col_names if col.startswith('ca_') and not col.endswith('d')]
+                        imm_kpt_cols = [col for col in filt_col_names if col.startswith('imm_') and not col.endswith('d')]
+
+                        # Combine the portions with filt_param_col_names in between
+                        combined_cols = ca_cols + filt_param_col_names + imm_cols + filt_param_col_names \
+                                        + ca_kpt_cols + imm_kpt_cols
+                        kstep_pred_data[i] = pd.DataFrame(uxs_pred, index=filt_timestamps, columns=combined_cols)
+                    else:
+                        raise ValueError("Invalid space. Choose between 'cartesian' and 'joint'.")
+            
                     kstep_pred_imm_probs[i] = pd.DataFrame(np.array(probs_bank_pred[i]), index=filt_timestamps, columns=prob_imm_col_names)
                     kstep_pred_cov[i] = pd.DataFrame(uxs_pred_cov, index=filt_timestamps) # the elements of the flattened covariance matrices are stored in separate anonymous columns
 
@@ -963,6 +1088,7 @@ def run_filtering_loop_joints(X_train_list, time_train_list, train_traj_idx,
                     kstep_pred_data[i] = kstep_pred_data[i].shift(+i)
                     kstep_pred_imm_probs[i] = kstep_pred_imm_probs[i].shift(+i)
                     kstep_pred_cov[i] = kstep_pred_cov[i].shift(+i)  
+
 
             # Store filtering results
             filtering_results[(k, subject_id, velocity, task)] = {
@@ -982,3 +1108,36 @@ def run_filtering_loop_joints(X_train_list, time_train_list, train_traj_idx,
             print(f"Processed {subject_id} - {velocity} - {task} for {k} steps ahead.\n\n")
 
     return measurement_split, filtering_results, prediction_results
+
+
+def propagate_covariance(dim_x, dim_z, ukf, body_model, p_idx, param_idx):
+    if (np.isnan(ukf.x)).any() or (np.isnan(ukf.P)).any():
+        return np.nan * np.ones(dim_z), np.nan * np.ones(dim_z * dim_z)
+    
+    # Sigma points for the UKF
+    sigma_fn = MerweScaledSigmaPoints(n=dim_x, alpha=.1, beta=2., kappa=1.)
+
+    # Calculate sigma points for given mean and covariance
+    sigmas = sigma_fn.sigma_points(ukf.x, ukf.P)
+
+    sigmas_h = []
+    kpts = hkm.Keypoints()
+    for s in sigmas:
+        body_model.forward_kinematics(s[p_idx], s[param_idx], kpts)
+        sigmas_h.append(kpts.get_keypoints())
+
+    sigmas_h = np.atleast_2d(sigmas_h)
+
+    # Mean and covariance of prediction passed through unscented transform
+    if isinstance(ukf, IMMEstimator):
+        # Select the first filter in the bank (arbitrary choice)
+        Wm = ukf.filters[0].Wm
+        Wc = ukf.filters[0].Wc
+        R = ukf.filters[0].R
+    else:
+        Wm = ukf.Wm
+        Wc = ukf.Wc
+        R = ukf.R
+    kpts_mean, kpts_cov = unscented_transform(sigmas_h, Wm, Wc, R)
+    
+    return kpts_mean, kpts_cov

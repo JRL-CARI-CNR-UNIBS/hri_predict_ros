@@ -3,5 +3,3 @@
 __pycache__/
 logs/
 data/
-*.csv
-*.json

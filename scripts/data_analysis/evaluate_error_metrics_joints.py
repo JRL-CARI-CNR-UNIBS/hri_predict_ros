@@ -10,7 +10,10 @@ pd.options.mode.chained_assignment = None  # default='warn'
 ## DEFINE PARAMETERS ##
 
 SRC = {'FOLDER': 'scripts', 'SUBFOLDER': 'data_analysis'}                               # source folder
-DATA = {'FOLDER': 'data', 'SUBFOLDER': 'preprocessed',
+DATA = {'FOLDER': 'data',
+        'SUBFOLDER_PREPROC': 'preprocessed',
+        'SUBFOLDER_FILT': 'filtered',
+        'SUBFOLDER_PRED': 'predicted',
         'CSV_FILE': 'dataset_pickplace.csv', 'JSON_FILE': 'column_names.json'}          # data folder and files
 RESULTS = {'FOLDER': 'results'}                                                         # results folder
 
@@ -24,16 +27,6 @@ SELECTED_TASK_NAMES = ['PICK-&-PLACE'] # , 'WALKING', 'PASSING-BY']             
 
 TRAIN_SUBJECTS = ['sub_9', 'sub_4', 'sub_11', 'sub_7', 'sub_8', 'sub_10', 'sub_6']      # select which subjects to use for training
 TEST_SUBJECTS = ['sub_13', 'sub_12', 'sub_3']                                           # select which subjects to use for testing
-
-ONLY_USE_UPPER_BODY = False                                                              # select whether to use only upper body joints
-if ONLY_USE_UPPER_BODY:
-    UPPER_BODY_FRAMES = ['arm', 'elbow', 'head']
-    UPPER_BODY_KPTS = ['0','1','2','3','4','5','6','7','14','15','16','17']
-    N_KPTS = len(UPPER_BODY_KPTS)
-    N_JOINTS = 10
-else:
-    N_KPTS = 18
-    N_JOINTS = 28
 
 # Define which keypoints to consider for each task in the metrics evaluation
 SELECTED_KEYPOINTS = {'PICK-&-PLACE': [4, 7], # [2, 3, 4, 5, 6, 7],
@@ -56,6 +49,26 @@ PRED_HORIZONS = [1, 3, 5]
 
 # Define the space in which the filter operates
 SPACE = 'joint'                             # 'cartesian' or 'joint'
+
+if SPACE == 'cartesian':
+    N_KPTS = 18
+elif SPACE == 'joint':
+    N_KPTS = 13
+    N_JOINTS = 28
+else:
+    ValueError("SPACE must be either 'cartesian' or 'joint'.")
+
+
+# ONLY_USE_UPPER_BODY = False                                                              # select whether to use only upper body joints
+# if ONLY_USE_UPPER_BODY:
+#     UPPER_BODY_FRAMES = ['arm', 'elbow', 'head']
+#     UPPER_BODY_KPTS = ['0','1','2','3','4','5','6','7','14','15','16','17']
+#     N_KPTS = len(UPPER_BODY_KPTS)
+#     N_JOINTS = 10
+# else:
+#     N_KPTS = 18
+#     N_JOINTS = 28
+
 
 # Filter parameters
 DT = 0.1
@@ -107,11 +120,19 @@ cwd = os.getcwd()
 # Split the path to get the package directory
 pkg_dir = cwd.split(SRC['FOLDER'])[0].split(SRC['SUBFOLDER'])[0]
 
-# Define the path to the preprocessed data
-preprocessed_dir = os.path.join(pkg_dir, DATA['FOLDER'], DATA['SUBFOLDER'])
+# Define the path to the preprocessed, filtered, and predicted data
+preprocessed_dir = os.path.join(pkg_dir, DATA['FOLDER'], DATA['SUBFOLDER_PREPROC'])
+filtered_dir = os.path.join(pkg_dir, DATA['FOLDER'], DATA['SUBFOLDER_FILT'])
+predicted_dir = os.path.join(pkg_dir, DATA['FOLDER'], DATA['SUBFOLDER_PRED'])
 
 # Define directory to store csv results
 results_dir = os.path.join(pkg_dir, RESULTS['FOLDER'])
+
+# Ensure the directories exist
+os.makedirs(preprocessed_dir, exist_ok=True)
+os.makedirs(filtered_dir, exist_ok=True)
+os.makedirs(predicted_dir, exist_ok=True)
+os.makedirs(results_dir, exist_ok=True)
 
 # Load the dataset
 df = pd.read_csv(os.path.join(preprocessed_dir, DATA['CSV_FILE']))
@@ -137,14 +158,14 @@ print('Testing dataset shape:', test_df.shape)
 
 
 # ====================================================================================================================================
-if ONLY_USE_UPPER_BODY:
-    print("\n1[b] / 5. [Optional] Select only the upper body...")
+# if ONLY_USE_UPPER_BODY:
+#     print("\n1[b] / 5. [Optional] Select only the upper body...")
 
-    for col in COLUMN_NAMES_IDX:
-        print(f"Column names: {col}")
-        if 'conf' in col:
-            column_names[col] = filter_upper_body_joints(column_names[col], UPPER_BODY_FRAMES)
-            assert len(column_names[col]) == N_JOINTS, f"Number of joints must be equal to {N_JOINTS}."
+#     for col in COLUMN_NAMES_IDX:
+#         print(f"Column names: {col}")
+#         if 'conf' in col:
+#             column_names[col] = filter_upper_body_joints(column_names[col], UPPER_BODY_FRAMES)
+#             assert len(column_names[col]) == N_JOINTS, f"Number of joints must be equal to {N_JOINTS}."
 
 
 # ====================================================================================================================================
@@ -185,14 +206,14 @@ if SPACE == 'cartesian':
 elif SPACE == 'joint':
     dim_x = N_VAR_PER_JOINT * N_JOINTS
     p_idx = np.arange(0, dim_x, N_VAR_PER_JOINT) # position indices
-    param_idx = range(dim_x, dim_x+N_PARAM)
+    param_idx = np.array(range(dim_x, dim_x + N_PARAM))
     dim_x += N_PARAM # the body params are states tracked by the filter
 else:
     ValueError("SPACE must be either 'cartesian' or 'joint'.")
 
 # Define the dimensionality of the measurement space for the filter
 dim_z = N_DIM_PER_KPT * N_KPTS
-print(f"dim_x: {dim_x}, dim_z: {dim_z}")
+
 # Initialize the state covariance matrix
 if SPACE == 'cartesian':
     init_P = ukf_predictor.initialize_P(N_VAR_PER_KPT, N_DIM_PER_KPT, N_KPTS, INIT_VAR_POS, INIT_VAR_VEL, INIT_VAR_ACC)
@@ -215,11 +236,11 @@ filtered_pred_column_names = ['{}_kp{}_{}'.format(filt_type, i, suffix)
 
 # JOINT SPACE: only done if the flag is set
 if SPACE == 'joint':
-    filtered_joint_column_names = ['{}_joint{}_{}'.format(filt_type, joint, suffix)
+    filtered_joint_column_names = ['{}_{}_{}'.format(filt_type, joint, suffix)
                                    for filt_type in ['ca', 'cv', 'imm']
                                    for joint in column_names['conf_names_filt']
                                    for suffix in ['pos', 'vel', 'acc']]
-    filtered_pred_joint_column_names = ['{}_joint{}_{}'.format(filt_type, joint, suffix)
+    filtered_pred_joint_column_names = ['{}_{}_{}'.format(filt_type, joint, suffix)
                                         for filt_type in ['ca', 'imm']
                                         for joint in column_names['conf_names_filt']
                                         for suffix in ['pos', 'vel', 'acc']]
@@ -249,20 +270,37 @@ else:
 # ====================================================================================================================================
 print("\n4 / 5. Evaluate error metrics for all filters for the IDENTIFICATION subjects...")
 
+import pickle
+loading_results = False
+
 tic = time.time()
 
-_, train_filtering_results, train_prediction_results = ukf_predictor.run_filtering_loop_joints(
-    X_train_list, time_train_list, train_traj_idx, PRED_HORIZONS, PREDICT_K_STEPS,
-    dim_x, dim_z, p_idx, DT,
-    N_VAR_PER_KPT, N_DIM_PER_KPT, N_KPTS,
-    init_P, VAR_MEAS_KPT, VAR_Q_ACC,
-    INIT_MU, M, NUM_FILTERS_IN_BANK,
-    ukf_predictor.custom_inv, MAX_TIME_NO_MEAS, PROB_IMM_COLUMN_NAMES,
-    space=SPACE,
-    param_idx=param_idx,
-    **output_column_names
-)
+if not loading_results:
+    _, train_filtering_results, train_prediction_results = ukf_predictor.run_filtering_loop_joints(
+        X_train_list, time_train_list, train_traj_idx, PRED_HORIZONS, PREDICT_K_STEPS,
+        dim_x, dim_z, p_idx, DT,
+        N_VAR_PER_KPT, N_DIM_PER_KPT, N_KPTS,
+        init_P, VAR_MEAS_KPT, VAR_Q_ACC,
+        INIT_MU, M, NUM_FILTERS_IN_BANK,
+        ukf_predictor.custom_inv, MAX_TIME_NO_MEAS, PROB_IMM_COLUMN_NAMES, output_column_names,
+        space=SPACE,
+        param_idx=param_idx
+    )
 
+    # Save the results
+    with open(os.path.join(filtered_dir, 'train_filtering_results.pkl'), 'wb') as f:
+        pickle.dump(train_filtering_results, f)
+    with open(os.path.join(predicted_dir, 'train_prediction_results.pkl'), 'wb') as f:
+        pickle.dump(train_prediction_results, f)
+
+else:
+    with open(os.path.join(filtered_dir, 'train_filtering_results.pkl'), 'rb') as f:
+        train_filtering_results = pickle.load(f)
+    with open(os.path.join(predicted_dir, 'train_prediction_results.pkl'), 'rb') as f:
+        train_prediction_results = pickle.load(f)
+
+
+# Evaluate the metrics for the identification subjects
 for horizon in PRED_HORIZONS:
     ukf_predictor.evaluate_metrics(
         TRAIN_SUBJECTS, SELECTED_VELOCITIES, SELECTED_TASK_NAMES,
@@ -281,21 +319,24 @@ print("\n5 / 5. Evaluate error metrics for all filters for the VALIDATION subjec
 
 tic = time.time()
 
-_, test_filtering_results, test_prediction_results = ukf_predictor.run_filtering_loop(
-    trigger_data, measurement_data,
-    TEST_SUBJECTS, VELOCITIES, TASK_NAMES, PRED_HORIZONS, PREDICT_K_STEPS,
+_, test_filtering_results, test_prediction_results = ukf_predictor.run_filtering_loop_joints(
+    X_test_list, time_test_list, test_traj_idx, PRED_HORIZONS, PREDICT_K_STEPS,
     dim_x, dim_z, p_idx, DT,
     N_VAR_PER_KPT, N_DIM_PER_KPT, N_KPTS,
     init_P, VAR_MEAS_KPT, VAR_Q_ACC,
     INIT_MU, M, NUM_FILTERS_IN_BANK,
-    ukf_predictor.custom_inv, MAX_TIME_NO_MEAS,
-    filtered_column_names, filtered_pred_column_names, PROB_IMM_COLUMN_NAMES
-)    
+    ukf_predictor.custom_inv, MAX_TIME_NO_MEAS, PROB_IMM_COLUMN_NAMES, output_column_names,
+    space=SPACE,
+    param_idx=param_idx
+)
 
 for horizon in PRED_HORIZONS:
-    evaluate_metrics(TEST_SUBJECTS, VELOCITIES, TASK_NAMES, SELECTED_KEYPOINTS, DIMENSIONS_PER_KEYPOINT,
-                     N_VAR_PER_KPT, N_DIM_PER_KPT, dim_x, horizon,
-                     test_filtering_results, test_prediction_results, results_dir)
+    ukf_predictor.evaluate_metrics(
+        TEST_SUBJECTS, SELECTED_VELOCITIES, SELECTED_TASK_NAMES,
+        SELECTED_KEYPOINTS, DIMENSIONS_PER_KEYPOINT,
+        N_VAR_PER_KPT, N_DIM_PER_KPT, dim_x, horizon,
+        test_filtering_results, test_prediction_results, results_dir
+    )
     
 toc = time.time()
 minutes, seconds = divmod(toc - tic, 60)
