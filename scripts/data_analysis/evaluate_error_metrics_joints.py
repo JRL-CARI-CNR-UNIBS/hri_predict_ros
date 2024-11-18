@@ -1,4 +1,4 @@
-import os, copy, time, json
+import os, time, json, pickle
 import numpy as np
 import pandas as pd
 import nstep_ukf_imm_estimator as ukf_predictor
@@ -6,10 +6,15 @@ from data_loading_utils import filter_upper_body_joints, select_trajectory_datas
 
 pd.options.mode.chained_assignment = None  # default='warn'
 
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning, module="pandas")
+
+
 # ====================================================================================================================================
 ## DEFINE PARAMETERS ##
 
 SRC = {'FOLDER': 'scripts', 'SUBFOLDER': 'data_analysis'}                               # source folder
+MODELS = {'FOLDER': 'models'}                                                           # models folder
 DATA = {'FOLDER': 'data',
         'SUBFOLDER_PREPROC': 'preprocessed',
         'SUBFOLDER_FILT': 'filtered',
@@ -22,8 +27,8 @@ COLUMN_NAMES_IDX = ['conf_names', 'conf_names_filt', 'conf_names_vel',
                     'kpt_names', 'kpt_names_filt', 'kpt_names_vel', 'kpt_names_acc']    # data column names to load from the JSON file
 
 SELECTED_INSTRUCTIONS = [1, 3, 7]                                                       # select which instructions to consider
-SELECTED_VELOCITIES = ['FAST', 'MEDIUM']                                                # select which velocities to consider
-SELECTED_TASK_NAMES = ['PICK-&-PLACE'] # , 'WALKING', 'PASSING-BY']                     # select which tasks to consider
+SELECTED_VELOCITIES = ['SLOW', 'FAST', 'MEDIUM']                                                # select which velocities to consider
+SELECTED_TASK_NAMES = ['PICK-&-PLACE'] #, 'WALKING', 'PASSING-BY']                     # select which tasks to consider
 
 TRAIN_SUBJECTS = ['sub_9', 'sub_4', 'sub_11', 'sub_7', 'sub_8', 'sub_10', 'sub_6']      # select which subjects to use for training
 TEST_SUBJECTS = ['sub_13', 'sub_12', 'sub_3']                                           # select which subjects to use for testing
@@ -100,6 +105,7 @@ else:
     ValueError("SPACE must be either 'cartesian' or 'joint'.")
 
 # Parameters for the IMM estimator
+USE_SINDY_MODEL = False
 NUM_FILTERS_IN_BANK = 3
 M = np.array([[0.55, 0.15, 0.30], # transition matrix for the IMM estimator
               [0.15, 0.75, 0.10],
@@ -108,7 +114,10 @@ M = np.array([[0.55, 0.15, 0.30], # transition matrix for the IMM estimator
 INIT_MU = np.array([0.55, 0.40, 0.05]) # initial mode probabilities for the IMM estimator
 
 # Define the column names for the IMM probabilities
-PROB_IMM_COLUMN_NAMES = ['prob_ca', 'prob_ca_no', 'prob_cv']
+if USE_SINDY_MODEL:
+    PROB_IMM_COLUMN_NAMES = ['prob_ca', 'prob_sindy', 'prob_cv']
+else:
+    PROB_IMM_COLUMN_NAMES = ['prob_ca', 'prob_ca_no', 'prob_cv']
 
 
 # ====================================================================================================================================
@@ -124,6 +133,7 @@ pkg_dir = cwd.split(SRC['FOLDER'])[0].split(SRC['SUBFOLDER'])[0]
 preprocessed_dir = os.path.join(pkg_dir, DATA['FOLDER'], DATA['SUBFOLDER_PREPROC'])
 filtered_dir = os.path.join(pkg_dir, DATA['FOLDER'], DATA['SUBFOLDER_FILT'])
 predicted_dir = os.path.join(pkg_dir, DATA['FOLDER'], DATA['SUBFOLDER_PRED'])
+models_dir = os.path.join(pkg_dir, MODELS['FOLDER'])
 
 # Define directory to store csv results
 results_dir = os.path.join(pkg_dir, RESULTS['FOLDER'])
@@ -133,6 +143,7 @@ os.makedirs(preprocessed_dir, exist_ok=True)
 os.makedirs(filtered_dir, exist_ok=True)
 os.makedirs(predicted_dir, exist_ok=True)
 os.makedirs(results_dir, exist_ok=True)
+os.makedirs(models_dir, exist_ok=True)
 
 # Load the dataset
 df = pd.read_csv(os.path.join(preprocessed_dir, DATA['CSV_FILE']))
@@ -270,12 +281,27 @@ else:
 # ====================================================================================================================================
 print("\n4 / 5. Evaluate error metrics for all filters for the IDENTIFICATION subjects...")
 
-import pickle
 loading_results = False
 
 tic = time.time()
 
 if not loading_results:
+
+    sindy_model = None
+    if USE_SINDY_MODEL:
+        # Load SINDy model
+        sindy_model = {}
+        import dill # requires dill to load LAMBDA functions
+
+        with open(os.path.join(models_dir, 'sindy_model_chest_pos_legs.pkl'), 'rb') as f:
+            sindy_model['chest_pos_legs'] = dill.load(f)
+        with open(os.path.join(models_dir, 'sindy_model_chest_rot_left_arm.pkl'), 'rb') as f:
+            sindy_model['chest_rot_left_arm'] = dill.load(f)
+        with open(os.path.join(models_dir, 'sindy_model_chest_rot_right_arm.pkl'), 'rb') as f:
+            sindy_model['chest_rot_right_arm'] = dill.load(f)
+        with open(os.path.join(models_dir, 'sindy_model_upper_body.pkl'), 'rb') as f:
+            sindy_model['upper_body'] = dill.load(f)
+
     _, train_filtering_results, train_prediction_results = ukf_predictor.run_filtering_loop_joints(
         X_train_list, time_train_list, train_traj_idx, PRED_HORIZONS, PREDICT_K_STEPS,
         dim_x, dim_z, p_idx, DT,
@@ -284,7 +310,8 @@ if not loading_results:
         INIT_MU, M, NUM_FILTERS_IN_BANK,
         ukf_predictor.custom_inv, MAX_TIME_NO_MEAS, PROB_IMM_COLUMN_NAMES, output_column_names,
         space=SPACE,
-        param_idx=param_idx
+        param_idx=param_idx,
+        sindy_model=sindy_model
     )
 
     # Save the results
@@ -319,17 +346,32 @@ print("\n5 / 5. Evaluate error metrics for all filters for the VALIDATION subjec
 
 tic = time.time()
 
-_, test_filtering_results, test_prediction_results = ukf_predictor.run_filtering_loop_joints(
-    X_test_list, time_test_list, test_traj_idx, PRED_HORIZONS, PREDICT_K_STEPS,
-    dim_x, dim_z, p_idx, DT,
-    N_VAR_PER_KPT, N_DIM_PER_KPT, N_KPTS,
-    init_P, VAR_MEAS_KPT, VAR_Q_ACC,
-    INIT_MU, M, NUM_FILTERS_IN_BANK,
-    ukf_predictor.custom_inv, MAX_TIME_NO_MEAS, PROB_IMM_COLUMN_NAMES, output_column_names,
-    space=SPACE,
-    param_idx=param_idx
-)
+if not loading_results:
+    _, test_filtering_results, test_prediction_results = ukf_predictor.run_filtering_loop_joints(
+        X_test_list, time_test_list, test_traj_idx, PRED_HORIZONS, PREDICT_K_STEPS,
+        dim_x, dim_z, p_idx, DT,
+        N_VAR_PER_KPT, N_DIM_PER_KPT, N_KPTS,
+        init_P, VAR_MEAS_KPT, VAR_Q_ACC,
+        INIT_MU, M, NUM_FILTERS_IN_BANK,
+        ukf_predictor.custom_inv, MAX_TIME_NO_MEAS, PROB_IMM_COLUMN_NAMES, output_column_names,
+        space=SPACE,
+        param_idx=param_idx
+    )
 
+    # Save the results
+    with open(os.path.join(filtered_dir, 'test_filtering_results.pkl'), 'wb') as f:
+        pickle.dump(test_filtering_results, f)
+    with open(os.path.join(predicted_dir, 'test_prediction_results.pkl'), 'wb') as f:
+        pickle.dump(test_prediction_results, f)
+
+else:
+    with open(os.path.join(filtered_dir, 'test_filtering_results.pkl'), 'rb') as f:
+        test_filtering_results = pickle.load(f)
+    with open(os.path.join(predicted_dir, 'test_prediction_results.pkl'), 'rb') as f:
+        test_prediction_results = pickle.load(f)
+
+
+# Evaluate the metrics for the validation subjects
 for horizon in PRED_HORIZONS:
     ukf_predictor.evaluate_metrics(
         TEST_SUBJECTS, SELECTED_VELOCITIES, SELECTED_TASK_NAMES,

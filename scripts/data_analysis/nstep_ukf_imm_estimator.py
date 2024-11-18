@@ -5,6 +5,7 @@ from filterpy.common import Q_discrete_white_noise
 from scipy.linalg import block_diag
 import os, copy, torch, tqdm, time
 import human_model_binding as hkm # human kinematic model
+import pysindy as ps
 
 pd.options.mode.chained_assignment = None  # default='warn'
 
@@ -93,11 +94,15 @@ def initialize_filters(dim_x, dim_z, p_idx, dt,
                        init_P, var_r, var_q,
                        n_var_per_dof, n_dim_per_kpt, n_kpts,
                        custom_inv, mu, M,
-                       space='cartesian', human_kinematic_model=None, n_param=None):
+                       space='cartesian', human_kinematic_model=None,
+                       param_idx=None,
+                       sindy_model=None):
     
     assert space in ['cartesian', 'joint'], "Invalid space. Choose between 'cartesian' or 'joint'."
     assert (human_kinematic_model is not None) if space == 'joint' else True, "Human kinematic model must be provided for joint space."
     
+    n_param = len(param_idx) if param_idx is not None else 0
+
     # measurement function: only the position is measured
     def hx(x: np.ndarray, param: np.ndarray):
         if space == 'cartesian':
@@ -142,6 +147,120 @@ def initialize_filters(dim_x, dim_z, p_idx, dt,
     ca_no_ukf = copy.deepcopy(ca_ukf)
     ca_no_ukf.Q = np.zeros((dim_x, dim_x))
 
+    # SINDY MODEL UKF
+    if sindy_model is not None:
+        assert param_idx is not None, "Parameter indices must be provided for SINDy model."
+
+        WALKING_BODY_JOINTS = [0, 1, 2, 8, 9] + list(range(10, 26)) # up to 25th joint (included)
+        WALKING_BODY_PARAMS = [i for i in range(n_param)]
+        
+        PICKPLACE_RH_BODY_JOINTS = list(range(3, 7)) + list(range(10, 14))
+        PICKPLACE_LH_BODY_JOINTS = list(range(3, 7)) + list(range(14, 18))
+        PICKPLACE_BODY_PARAMS = list(range(0, 5))
+
+        UPPER_BODY_JOINTS = list(range(3, 8)) + list(range(10, 18)) + list(range(26, 28))
+        UPPER_BODY_PARAMS = list(range(0, 5)) + [7]
+
+        def compute_sindy_prediction(x, selected_joints, selected_params, model_name):
+            # Define indices for the joint and parameter states
+            p_idx_temp = p_idx[selected_joints]
+            v_idx_temp = p_idx_temp + 1
+            a_idx_temp = v_idx_temp + 1
+            param_idx_temp = np.array(param_idx[selected_params])
+
+            # Select the SINDy model
+            model = sindy_model[model_name]
+
+            # Predict the next state using the SINDy models
+            state = x[a_idx_temp]
+            input = x[np.sort(np.concatenate((p_idx_temp, v_idx_temp, param_idx_temp)))]
+
+            # Reshape the state and input for the SINDy model
+            state = state.reshape(1, -1)
+            input = input.reshape(1, -1)
+
+            # Predict the next state using the SINDy model
+            x_dot_pred = model.predict(state, u=input)
+
+            return x_dot_pred
+        
+
+        def fx_sindy(x: np.ndarray, dt: float) -> np.ndarray:
+            # Chest position and leg joints
+            x_dot_pred_chest_pos_legs = \
+                compute_sindy_prediction(x,
+                                         WALKING_BODY_JOINTS,
+                                         WALKING_BODY_PARAMS,
+                                         'chest_pos_legs')
+
+            # Chest rotation and right arm joints
+            x_dot_pred_chest_rot_right_arm = \
+                compute_sindy_prediction(x,
+                                         PICKPLACE_RH_BODY_JOINTS,
+                                         PICKPLACE_BODY_PARAMS,
+                                         'chest_rot_right_arm')
+
+            # Chest rotation and left arm joints
+            x_dot_pred_chest_rot_left_arm = \
+                compute_sindy_prediction(x,
+                                         PICKPLACE_LH_BODY_JOINTS,
+                                         PICKPLACE_BODY_PARAMS,
+                                         'chest_rot_left_arm')
+            
+            # Upper body
+            x_dot_pred_upper_body = \
+                compute_sindy_prediction(x,
+                                         UPPER_BODY_JOINTS,
+                                         UPPER_BODY_PARAMS,
+                                         'upper_body')
+
+            # Merge the partial predicted jerks into a single prediction
+            combined_pred = np.zeros_like(x[p_idx])
+            count_pred = np.zeros_like(x[p_idx])
+
+            # Add predictions for WALKING_BODY_JOINTS
+            combined_pred[WALKING_BODY_JOINTS] += x_dot_pred_chest_pos_legs[0]
+            count_pred[WALKING_BODY_JOINTS] += 1
+
+            # Add predictions for PICKPLACE_RH_BODY_JOINTS
+            combined_pred[PICKPLACE_RH_BODY_JOINTS] += x_dot_pred_chest_rot_right_arm[0]
+            count_pred[PICKPLACE_RH_BODY_JOINTS] += 1
+
+            # Add predictions for PICKPLACE_LH_BODY_JOINTS
+            combined_pred[PICKPLACE_LH_BODY_JOINTS] += x_dot_pred_chest_rot_left_arm[0]
+            count_pred[PICKPLACE_LH_BODY_JOINTS] += 1
+
+            # Add predictions for UPPER_BODY_JOINTS
+            combined_pred[UPPER_BODY_JOINTS] += x_dot_pred_upper_body[0]
+            count_pred[UPPER_BODY_JOINTS] += 1
+
+            # Avoid division by zero
+            count_pred[count_pred == 0] = 1
+
+            # Calculate the average jerk predictions
+            jerk_pred = combined_pred / count_pred
+
+            # Create the predicted state applying triple integration
+            x_next_pred = np.zeros_like(x)
+            x_next_pred[p_idx] = x[p_idx] + x[p_idx + 1]*dt             # pos_next = pos + vel*dt
+            x_next_pred[p_idx + 1] = x[p_idx + 1] + x[p_idx + 2]*dt     # vel_next = vel + acc*dt
+            x_next_pred[p_idx + 2] = x[p_idx + 2] + jerk_pred*dt        # acc_next = acc + jerk*dt
+        
+            return x_next_pred
+        
+        sindy_ukf = UnscentedKalmanFilter(dim_x=dim_x, dim_z=dim_z, dt=dt, hx=hx, fx=fx_sindy, points=sigmas)
+        sindy_ukf.x = np.nan * np.ones(dim_x)
+        sindy_ukf.P = init_P
+        sindy_ukf.R = np.eye(dim_z)* var_r
+        sindy_ukf.Q = Q_discrete_white_noise(dim=n_var_per_dof, dt=dt, var=var_q, block_size=len(p_idx))
+        if space == 'joint' and n_param is not None:
+            sindy_ukf.Q = np.block([
+                [sindy_ukf.Q, np.zeros((sindy_ukf.Q.shape[0], n_param))],
+                [np.zeros((n_param, sindy_ukf.Q.shape[1])), np.eye(n_param)*var_q]
+            ])
+        sindy_ukf.inv = custom_inv
+
+
     # CONSTANT VELOCITY UKF
     F_block_cv = np.array([[1, dt, 0],
                            [0, 1, 0],
@@ -172,7 +291,10 @@ def initialize_filters(dim_x, dim_z, p_idx, dt,
     cv_ukf.inv = custom_inv
 
     # IMM ESTIMATOR
-    filters = [copy.deepcopy(ca_ukf), ca_no_ukf, copy.deepcopy(cv_ukf)]
+    if sindy_model is not None:
+        filters = [copy.deepcopy(ca_ukf), sindy_ukf, copy.deepcopy(cv_ukf)]
+    else:
+        filters = [copy.deepcopy(ca_ukf), ca_no_ukf, copy.deepcopy(cv_ukf)]
 
     bank = IMMEstimator(filters, mu, M)
 
@@ -661,7 +783,9 @@ def run_filtering_loop_joints(X_train_list, time_train_list, train_traj_idx,
                               custom_inv, max_time_no_meas,
                               prob_imm_col_names,
                               output_col_names,
-                              space='cartesian', param_idx=np.array([])):
+                              space='cartesian',
+                              param_idx=np.array([]),
+                              sindy_model=None):
     
     assert space in ['cartesian', 'joint'], "Invalid space. Choose between 'cartesian' and 'joint'."
     
@@ -672,7 +796,6 @@ def run_filtering_loop_joints(X_train_list, time_train_list, train_traj_idx,
         filt_joint_col_names = output_col_names['filtered_joint_column_names']
         filt_pred_joint_col_names = output_col_names['filtered_pred_joint_column_names']
         filt_param_col_names = output_col_names['filtered_param_names']
-        filt_pred_param_col_names = output_col_names['filtered_pred_param_names']
 
     # Create dictionary to store results
     measurement_split = {}   # dictionary of DataFrames with the measurements split by task
@@ -706,7 +829,9 @@ def run_filtering_loop_joints(X_train_list, time_train_list, train_traj_idx,
                                                       init_P, var_r, var_q,
                                                       n_var_per_dof, n_dim_per_kpt, n_kpts,
                                                       custom_inv, mu, M,
-                                                      space=space, human_kinematic_model=body_model, n_param=len(param_idx))
+                                                      space=space, human_kinematic_model=body_model,
+                                                      param_idx=param_idx,
+                                                      sindy_model=sindy_model)
             ca_ukf_pred = copy.deepcopy(ca_ukf)
             bank_pred = copy.deepcopy(bank)
 
