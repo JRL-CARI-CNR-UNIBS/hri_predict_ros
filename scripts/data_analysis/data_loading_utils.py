@@ -23,9 +23,9 @@ def select_trajectory_dataset(df,
 
     counter = 0
     for sub in subjects:
-        for instruction in instructions:
-            for velocity in velocities:
-                for task in task_names:
+        for task in task_names:
+            for instruction in instructions[task]:
+                for velocity in velocities:
                     selection_filter = (df['Subject'] == sub) & \
                                        (df['Instruction_id'] == instruction) & \
                                        (df['Velocity'] == velocity) & \
@@ -46,7 +46,7 @@ def select_trajectory_dataset(df,
 
                     counter += 1
 
-                    print(f'TRAINING DATASET, Trajectory {counter} (# samples: {X.shape[0]}):\t',
+                    print(f'Trajectory {counter} (# samples: {X.shape[0]}):\t',
                         f'Subject {sub}, Instruction {instruction}, Velocity {velocity}, Task {task}')
                 
     return X_list, time_list, traj_idx
