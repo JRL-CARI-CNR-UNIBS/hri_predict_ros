@@ -1,164 +1,52 @@
-import os, rospkg, pickle, copy, time
+import os, time, json, pickle, glob
 import numpy as np
 import pandas as pd
 import nstep_ukf_imm_estimator as ukf_predictor
+from utils import select_trajectory_dataset
 
 pd.options.mode.chained_assignment = None  # default='warn'
 
-# ====================================================================================================
-print("\n1 / 5. Load preprocessed data...")
-
-# Get the path to the package this script is in
-rospack = rospkg.RosPack()
-package_path = rospack.get_path('hri_predict_ros')
-
-# Load preprocessed data from pickle files
-preprocessed_dir = os.path.join(package_path, 'logs', 'preprocessed')
-
-with open(os.path.join(preprocessed_dir, 'bag_data.pkl'), 'rb') as f:
-    bag_data = pickle.load(f)
-
-with open(os.path.join(preprocessed_dir, 'measurement_data.pkl'), 'rb') as f:
-    measurement_data = pickle.load(f)
-
-with open(os.path.join(preprocessed_dir, 'trigger_data.pkl'), 'rb') as f:
-    trigger_data = pickle.load(f)
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning, module="pandas")
 
 
-# ====================================================================================================
-print("\n2 / 5. Define a function to compute error metrics...")
+# ====================================================================================================================================
+## DEFINE PARAMETERS ##
 
-def evaluate_metrics(subjects, velocities, tasks, keypoints, dim_name_per_kpt,
-                     n_var_per_dof, n_dim_per_kpt, dim_x, k,
-                     filtering_results, prediction_results, results_dir):
-    
-    results = {}
-    results_df = pd.DataFrame(results, index=['PICK-&-PLACE', 'WALKING', 'PASSING-BY'])
-    results_df.to_csv(os.path.join(results_dir,f'results_{k}.csv'))
+SRC = {'FOLDER': 'scripts', 'SUBFOLDER': 'data_analysis'}                               # source folder
+MODELS = {'FOLDER': 'models'}                                                           # models folder
+DATA = {'FOLDER': 'data',
+        'SUBFOLDER_PREPROC': 'preprocessed',
+        'SUBFOLDER_OUTPUT': 'output',
+        'CSV_FILES': {'PICK-&-PLACE': 'dataset_PICK-&-PLACE.csv',
+                      'WALKING': 'dataset_WALKING.csv',
+                      'PASSING-BY': 'dataset_PASSING-BY.csv'},
+        'JSON_FILE': 'column_names.json'}                                               # data folder and files
+RESULTS = {'FOLDER': 'results'}                                                         # results folder
 
-    avg_errors = {}
-    avg_rmse = {}
-    avg_std = {}
-    avg_perc = {}
-        
-    # Compute the average error between the filtered states and the k-step ahead predictions
-    avg_errors[k] = {'PICK-&-PLACE': {'CA': 0.0, 'IMM': 0.0},
-                     'WALKING':      {'CA': 0.0, 'IMM': 0.0},
-                     'PASSING-BY':   {'CA': 0.0, 'IMM': 0.0}}
+COLUMN_NAMES_IDX = ['conf_names', 'conf_names_filt', 'conf_names_vel',
+                    'conf_names_acc', 'conf_names_jerk', 'param_names',
+                    'kpt_names', 'kpt_names_filt', 'kpt_names_vel', 'kpt_names_acc']    # data column names to load from the JSON file
 
-    # Compute the average RMSE between the filtered states and the k-step ahead predictions
-    avg_rmse[k] = copy.deepcopy(avg_errors[k])
+# Select which instructions to consider
+SELECTED_INSTRUCTIONS = {
+    'PICK-&-PLACE': [1],#[1, 2, 3, 4, 5, 6, 7, 8], # discard instruction_id=0, as the subject stands still
+    'WALKING':      [1, 2, 3],                # discard instruction_id=0, as the subject stands still
+    'PASSING-BY':   [1, 2] # do not select instruction_id=0, as the subject is outside the camera view
+}                                                 
+SELECTED_VELOCITIES = ['FAST']#['SLOW', 'MEDIUM', 'FAST']                                        # select which velocities to consider
+SELECTED_TASK_NAMES = ['PICK-&-PLACE']#['PICK-&-PLACE', 'WALKING', 'PASSING-BY']                         # select which tasks to consider
+SELECTED_KEYPOINTS_FOR_KINEMATIC_MODEL = [0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]    # select which keypoints to consider for the kinematic model
 
-    # Compute the average standard deviation of the filtered states and the k-step ahead predictions
-    avg_std[k] = copy.deepcopy(avg_errors[k])
+TRAIN_SUBJECTS = ['sub_9', 'sub_4', 'sub_11', 'sub_7', 'sub_8', 'sub_10', 'sub_6']      # select which subjects to use for training
+TEST_SUBJECTS = ['sub_13', 'sub_12', 'sub_3']                                           # select which subjects to use for testing
 
-    # Compute the percentage of k-step ahead samples that fall within the band current filtered state +- 1*std
-    avg_perc = copy.deepcopy(avg_errors)
-
-    for subject_id in subjects:
-        for velocity in velocities:
-            for task in tasks:
-                filt = filtering_results[(k, subject_id, velocity, task)]['filtered_data']
-                kpred = prediction_results[(k, subject_id, velocity, task)]['kstep_pred_data'][k-1]
-                kpred_var = prediction_results[(k, subject_id, velocity, task)]['kstep_pred_cov'][k-1]
-                
-                ca_states = []
-                ca_variance_idxs = []
-                imm_states = []
-                imm_variance_idxs = []
-                for kpt in keypoints[task]:
-                    for dim in dim_name_per_kpt[kpt]:
-                        ca_states.append('ca_kp{}_{}'.format(kpt, dim))
-                        imm_states.append('imm_kp{}_{}'.format(kpt, dim))
-
-                        state_idx = ['x', 'xd', 'xdd', 'y', 'yd', 'ydd', 'z', 'zd', 'zdd'].index(dim) + n_var_per_dof * n_dim_per_kpt * kpt
-                        ca_variance_idx = dim_x * state_idx + state_idx
-                        imm_variance_idx = dim_x * state_idx + state_idx + dim_x * dim_x
-                        ca_variance_idxs.append(ca_variance_idx)
-                        imm_variance_idxs.append(imm_variance_idx)
-                
-                ca_error, imm_error = ukf_predictor.compute_mean_error(filt, kpred, ca_states, imm_states)
-                ca_rmse, imm_rmse = ukf_predictor.compute_rmse_error(filt, kpred, ca_states, imm_states)
-                ca_std, imm_std = ukf_predictor.compute_std_error(filt, kpred, ca_states, imm_states)
-                ca_perc, imm_perc = ukf_predictor.compute_avg_perc(filt, kpred, kpred_var,
-                                                                   ca_states, imm_states, ca_variance_idxs, imm_variance_idxs)
-                
-                avg_errors[k][task]['CA'] += ca_error
-                avg_errors[k][task]['IMM'] += imm_error
-                avg_rmse[k][task]['CA'] += ca_rmse
-                avg_rmse[k][task]['IMM'] += imm_rmse
-                avg_std[k][task]['CA'] += ca_std
-                avg_std[k][task]['IMM'] += imm_std
-                avg_perc[k][task]['CA'] += ca_perc
-                avg_perc[k][task]['IMM'] += imm_perc
-
-    # Compute the average values of these aggregated metrics
-    num_sums = len(subjects) * len(velocities)
-    for task in tasks:
-        avg_errors[k][task]['CA'] /= num_sums
-        avg_errors[k][task]['IMM'] /= num_sums
-        avg_rmse[k][task]['CA'] /= num_sums
-        avg_rmse[k][task]['IMM'] /= num_sums
-        avg_std[k][task]['CA'] /= num_sums
-        avg_std[k][task]['IMM'] /= num_sums
-        avg_perc[k][task]['CA'] /= num_sums
-        avg_perc[k][task]['IMM'] /= num_sums
-
-        # Average over all selected keypoints
-        avg_errors[k][task]['CA'] = np.mean(avg_errors[k][task]['CA'])
-        avg_errors[k][task]['IMM'] = np.mean(avg_errors[k][task]['IMM'])
-        avg_rmse[k][task]['CA'] = np.mean(avg_rmse[k][task]['CA'])
-        avg_rmse[k][task]['IMM'] = np.mean(avg_rmse[k][task]['IMM'])
-        avg_std[k][task]['CA'] = np.mean(avg_std[k][task]['CA'])
-        avg_std[k][task]['IMM'] = np.mean(avg_std[k][task]['IMM'])
-        avg_perc[k][task]['CA'] = np.mean(avg_perc[k][task]['CA'])
-        avg_perc[k][task]['IMM'] = np.mean(avg_perc[k][task]['IMM'])
-
-    # Display the results aggregating results for all keypoints
-    print(f"Results for k={k}")
-    print("Average error (CA): {:.6f}, {:.6f}, {:.6f}".format(
-        avg_errors[k]['PICK-&-PLACE']['CA'], avg_errors[k]['WALKING']['CA'], avg_errors[k]['PASSING-BY']['CA']))
-    print("Average error (IMM): {:.6f}, {:.6f}, {:.6f}".format(
-        avg_errors[k]['PICK-&-PLACE']['IMM'], avg_errors[k]['WALKING']['IMM'], avg_errors[k]['PASSING-BY']['IMM']))
-    print("Average RMSE (CA): {:.6f}, {:.6f}, {:.6f}".format(
-        avg_rmse[k]['PICK-&-PLACE']['CA'], avg_rmse[k]['WALKING']['CA'], avg_rmse[k]['PASSING-BY']['CA']))
-    print("Average RMSE (IMM): {:.6f}, {:.6f}, {:.6f}".format(
-        avg_rmse[k]['PICK-&-PLACE']['IMM'], avg_rmse[k]['WALKING']['IMM'], avg_rmse[k]['PASSING-BY']['IMM']))
-    print("Average std (CA): {:.4f}, {:.4f}, {:.4f}".format(
-        avg_std[k]['PICK-&-PLACE']['CA'], avg_std[k]['WALKING']['CA'], avg_std[k]['PASSING-BY']['CA']))
-    print("Average std (IMM): {:.4f}, {:.4f}, {:.4f}".format(
-        avg_std[k]['PICK-&-PLACE']['IMM'], avg_std[k]['WALKING']['IMM'], avg_std[k]['PASSING-BY']['IMM']))
-    print("Average percentage (CA): {:.4f}, {:.4f}, {:.4f}".format(
-        avg_perc[k]['PICK-&-PLACE']['CA'], avg_perc[k]['WALKING']['CA'], avg_perc[k]['PASSING-BY']['CA']))
-    print("Average percentage (IMM): {:.4f}, {:.4f}, {:.4f}".format(
-        avg_perc[k]['PICK-&-PLACE']['IMM'], avg_perc[k]['WALKING']['IMM'], avg_perc[k]['PASSING-BY']['IMM']))
-    print("===============================================\n\n")
-
-    # Export results to a CSV file
-    results = {'CA_error': [avg_errors[k]['PICK-&-PLACE']['CA'], avg_errors[k]['WALKING']['CA'], avg_errors[k]['PASSING-BY']['CA']],
-                'IMM_error': [avg_errors[k]['PICK-&-PLACE']['IMM'], avg_errors[k]['WALKING']['IMM'], avg_errors[k]['PASSING-BY']['IMM']],
-                'CA_RMSE': [avg_rmse[k]['PICK-&-PLACE']['CA'], avg_rmse[k]['WALKING']['CA'], avg_rmse[k]['PASSING-BY']['CA']],
-                'IMM_RMSE': [avg_rmse[k]['PICK-&-PLACE']['IMM'], avg_rmse[k]['WALKING']['IMM'], avg_rmse[k]['PASSING-BY']['IMM']],
-                'CA_std': [avg_std[k]['PICK-&-PLACE']['CA'], avg_std[k]['WALKING']['CA'], avg_std[k]['PASSING-BY']['CA']],
-                'IMM_std': [avg_std[k]['PICK-&-PLACE']['IMM'], avg_std[k]['WALKING']['IMM'], avg_std[k]['PASSING-BY']['IMM']],
-                'CA_perc': [avg_perc[k]['PICK-&-PLACE']['CA'], avg_perc[k]['WALKING']['CA'], avg_perc[k]['PASSING-BY']['CA']],
-                'IMM_perc': [avg_perc[k]['PICK-&-PLACE']['IMM'], avg_perc[k]['WALKING']['IMM'], avg_perc[k]['PASSING-BY']['IMM']]}
-    
-    results_df = pd.DataFrame(results, index=['PICK-&-PLACE', 'WALKING', 'PASSING-BY'])
-    results_df.to_csv(os.path.join(results_dir,f'results_{k}steps.csv'))
-
-
-# ====================================================================================================
-print("\n3 / 5. Define parameters and constants...")
-
-# Define velocity and task names
-VELOCITIES = ['SLOW', 'MEDIUM', 'FAST']
-TASK_NAMES = ['PICK-&-PLACE', 'WALKING', 'PASSING-BY']
-
-# Define which keypoints to consider for each task
-KEYPOINTS = {'PICK-&-PLACE': [4, 7], # [2, 3, 4, 5, 6, 7],
-             'WALKING': [0, 1], # [0, 1, 2, 5, 8, 11],
-             'PASSING-BY': [0, 1]} # [0, 1, 2, 5, 8, 11]}
+# Define which keypoints to consider for each task in the metrics evaluation
+SELECTED_KEYPOINTS_FOR_EVALUATION = {
+    'PICK-&-PLACE': [2, 3, 4, 5, 6, 7],
+    'WALKING':      [0, 1, 2, 5, 8, 11],
+    'PASSING-BY':   [0, 1, 2, 5, 8, 11]
+} 
 
 DIMENSIONS_PER_KEYPOINT = {0:  ['y'],
                            1:  ['y'],
@@ -171,115 +59,366 @@ DIMENSIONS_PER_KEYPOINT = {0:  ['y'],
                            8:  ['y'],
                            11: ['y']}
 
-# Define possible prediction horizons
+# Define possible prediction horizons (in steps)
 PRED_HORIZONS = [1, 3, 5]
 
-# Subject IDS
-subject_ids = trigger_data.keys()
-print("Subjects: ", subject_ids)
+# Define whether to load the results from the pickle files
+LOADING_RESULTS = False
 
-# Split subjects into train and test
-train_subjects = ['sub_9', 'sub_4', 'sub_11', 'sub_7', 'sub_8', 'sub_10', 'sub_6']
-test_subjects = ['sub_13', 'sub_12', 'sub_3']
+# Define the space in which the filter operates
+SPACE = 'cartesian'                             # 'cartesian' or 'joint'
+# Define the space in which the error metrics are evaluated
+SPACE_FOR_EVALUATION = 'cartesian'              # 'cartesian' or 'joint'
+
+assert SPACE_FOR_EVALUATION == 'cartesian' if SPACE == 'cartesian' else True, \
+    "SPACE_FOR_EVALUATION must be 'cartesian' if SPACE is 'cartesian'."
+
+# Define the number of keypoints and joints
+N_KPTS = 13
+if SPACE == 'joint':
+    N_JOINTS = 28
+
 
 # Filter parameters
-dt = 0.1
-predict_k_steps = True
-n_kpts = 18
-n_var_per_dof = 3       # position, velocity, acceleration
-n_dim_per_kpt = 3       # x, y, z
-dim_x = n_var_per_dof * n_dim_per_kpt * n_kpts
-dim_z = n_dim_per_kpt * n_kpts
-max_time_no_meas = pd.Timedelta(seconds=1.0)
+DT = 0.1
+PREDICT_K_STEPS = True
+N_VAR_PER_JOINT = 3                             # position, velocity, acceleration
+N_PARAM = 8                                     # (shoulder_distance, chest_hip_distance, hip_distance,
+                                                # upper_arm_length, lower_arm_length,
+                                                # upper_leg_length, lower_leg_length,
+                                                # head_distance)
+N_VAR_PER_KPT = 3                               # position, velocity, acceleration
+N_DIM_PER_KPT = 3                               # x, y, z
+MAX_TIME_NO_MEAS = pd.Timedelta(seconds= 0.1)   # maximum time without measurements before resetting the filter
 
 # Initial uncertainty parameters for the filters
-var_r = 0.0025          # [paper: r_y] Hip: 3-sigma (99.5%) = 0.15 m ==> sigma 0.05 m ==> var = (0.05)^2 m^2
-var_q = 0.01            # [paper: q_a] a_dot = u (u = 0 is very uncertain ==> add variance here)
-var_P_pos = var_r       # [paper: p_y] Set equal to the measurement noise since the state is initialized with the measurement
-var_P_vel = 0.02844     # [paper: p_v] Hip: no keypoint moves faster than 1.6 m/s ==> 3-sigma (99.5%) = 1.6 m/s ==> var = (1.6/3)^2 m^2/s^2
-var_P_acc = 1.1111      # [paper: p_a] Hip: no keypoint accelerates faster than 10 m/s^2 ==> 3-sigma (99.5%) = 10 m/s^2 ==> var = (10/3)^2 m^2/s^4
-init_P = ukf_predictor.initialize_P(n_var_per_dof, n_dim_per_kpt, n_kpts, var_P_pos, var_P_vel, var_P_acc)
+VAR_MEAS_KPT = 0.0025           # [paper: r_y] Hip: 3-sigma (99.5%) = 0.15 m ==> sigma 0.05 m ==> var = (0.05)^2 m^2
+VAR_Q_ACC = 0.01                # [paper: q_a] a_dot = u (u = 0 is very uncertain ==> add variance here)
+
+if SPACE == 'cartesian':
+    INIT_VAR_POS = VAR_MEAS_KPT     # [paper: p_y] Set equal to the measurement noise since the state is initialized with the measurement
+    INIT_VAR_VEL = 0.02844          # [paper: p_v] Hip: no keypoint moves faster than 1.6 m/s ==> 3-sigma (99.5%) = 1.6 m/s ==> var = (1.6/3)^2 m^2/s^2
+    INIT_VAR_ACC = 1.1111           # [paper: p_a] Hip: no keypoint accelerates faster than 10 m/s^2 ==> 3-sigma (99.5%) = 10 m/s^2 ==> var = (10/3)^2 m^2/s^4
+elif SPACE == 'joint':
+    INIT_VAR_POS = 0.01 #TODO: to tune -> should be related to VAR_MEAS_KPT, but the link is the NONLINEAR inverse kinematics => not trivial, requires MonteCarlo?
+                        # Moreover: which subject to use for the MonteCarlo? All subjects? Only the training subjects? The body parameters are different for each subject.
+    INIT_VAR_VEL = 0.01 #TODO: to tune
+    INIT_VAR_ACC = 0.01 #TODO: to tune
+    INIT_VAR_PARAM = 0.1 #TODO: to tune
+else:
+    ValueError("SPACE must be either 'cartesian' or 'joint'.")
 
 # Parameters for the IMM estimator
-num_filters_in_bank = 3
+USE_SINDY_MODEL = False
+NUM_FILTERS_IN_BANK = 3
 M = np.array([[0.55, 0.15, 0.30], # transition matrix for the IMM estimator
               [0.15, 0.75, 0.10],
               [0.60, 0.30, 0.10]])
 
-mu = np.array([0.55, 0.40, 0.05]) # initial mode probabilities for the IMM estimator
+INIT_MU = np.array([0.55, 0.40, 0.05]) # initial mode probabilities for the IMM estimator
 
-# Position indices
-p_idx = np.arange(0, dim_x, n_var_per_dof)
+# Define the column names for the IMM probabilities
+if USE_SINDY_MODEL:
+    PROB_IMM_COLUMN_NAMES = ['prob_ca', 'prob_sindy', 'prob_cv']
+else:
+    PROB_IMM_COLUMN_NAMES = ['prob_ca', 'prob_ca_no', 'prob_cv']
 
-# Column names
-state_names = ['kp{}_{}'.format(i, suffix)
-               for i in range(n_kpts)
-               for suffix in ['x', 'xd', 'xdd', 'y', 'yd', 'ydd', 'z', 'zd', 'zdd']]
-measurement_names = ['kp{}_{}'.format(i, suffix)
-                     for i in range(n_kpts)
-                     for suffix in ['x', 'y', 'z']]
+
+# ====================================================================================================================================
+print("\nDefine parameters and load column names...")
+
+# Get the current working directory
+cwd = os.getcwd()
+
+# Split the path to get the package directory
+pkg_dir = cwd.split(SRC['FOLDER'])[0].split(SRC['SUBFOLDER'])[0]
+
+# Define the path to the preprocessed, filtered, and predicted data
+preprocessed_dir = os.path.join(pkg_dir, DATA['FOLDER'], DATA['SUBFOLDER_PREPROC'])
+output_dir = os.path.join(pkg_dir, DATA['FOLDER'], DATA['SUBFOLDER_OUTPUT'])
+models_dir = os.path.join(pkg_dir, MODELS['FOLDER'])
+
+# Define directory to store csv results
+results_dir = os.path.join(pkg_dir, RESULTS['FOLDER'])
+
+# Ensure the directories exist
+os.makedirs(preprocessed_dir, exist_ok=True)
+os.makedirs(output_dir, exist_ok=True)
+os.makedirs(results_dir, exist_ok=True)
+os.makedirs(models_dir, exist_ok=True)
+
+# Load the column names
+with open(os.path.join(preprocessed_dir, DATA['JSON_FILE']), 'r') as f:
+    data = json.load(f)
+
+# Extract the column names
+column_names = {}
+for col in COLUMN_NAMES_IDX:
+    column_names[col] = data[col]
+
+# Define the column names for the filtered and predicted data
+# CARTESIAN SPACE: always done
 filtered_column_names = ['{}_kp{}_{}'.format(filt_type, i, suffix)
                          for filt_type in ['ca', 'cv', 'imm']
-                         for i in range(n_kpts)
+                         for i in range(N_KPTS)
                          for suffix in ['x', 'xd', 'xdd', 'y', 'yd', 'ydd', 'z', 'zd', 'zdd']]
 filtered_pred_column_names = ['{}_kp{}_{}'.format(filt_type, i, suffix)
                               for filt_type in ['ca', 'imm']
-                              for i in range(n_kpts)
+                              for i in range(N_KPTS)
                               for suffix in ['x', 'xd', 'xdd', 'y', 'yd', 'ydd', 'z', 'zd', 'zdd']]
-col_names_imm = ['imm_pos', 'imm_vel', 'imm_acc']
-col_names_prob_imm = ['prob_ca', 'prob_ca_no', 'prob_cv']
 
-# Define directory to store csv results
-results_dir = os.path.join(package_path, 'logs', 'results')
+# JOINT SPACE: only done if the flag is set
+if SPACE == 'joint':
+    filtered_joint_column_names = ['{}_{}_{}'.format(filt_type, joint, suffix)
+                                   for filt_type in ['ca', 'cv', 'imm']
+                                   for joint in column_names['conf_names_filt']
+                                   for suffix in ['pos', 'vel', 'acc']]
+    filtered_pred_joint_column_names = ['{}_{}_{}'.format(filt_type, joint, suffix)
+                                        for filt_type in ['ca', 'imm']
+                                        for joint in column_names['conf_names_filt']
+                                        for suffix in ['pos', 'vel', 'acc']]
+    filtered_param_names = column_names['param_names']
+    filtered_pred_param_names = column_names['param_names']
+    
+# Define column names for the filtered and predicted data
+if SPACE == 'cartesian':
+    output_column_names = {
+        'filtered_column_names': filtered_column_names,
+        'filtered_pred_column_names': filtered_pred_column_names
+    }
+elif SPACE == 'joint':
+    output_column_names = {
+        'filtered_column_names': filtered_column_names,
+        'filtered_pred_column_names': filtered_pred_column_names,
+        'filtered_joint_column_names': filtered_joint_column_names,
+        'filtered_pred_joint_column_names': filtered_pred_joint_column_names,
+        'filtered_param_names': filtered_param_names,
+        'filtered_pred_param_names': filtered_pred_param_names
+    }
+else:
+    raise ValueError("SPACE must be either 'cartesian' or 'joint'.")
 
 
-# ====================================================================================================
-print("\n4 / 5. Evaluate error metrics for all filters for the IDENTIFICATION subjects...")
+# Define the dimensionality of the state space for the filter
+if SPACE == 'cartesian':
+    dim_x = N_VAR_PER_KPT * N_DIM_PER_KPT * N_KPTS
+    p_idx = np.arange(0, dim_x, N_VAR_PER_KPT) # position indices
+    param_idx = np.array([]) # no body params are states tracked by the filter
+elif SPACE == 'joint':
+    dim_x = N_VAR_PER_JOINT * N_JOINTS
+    p_idx = np.arange(0, dim_x, N_VAR_PER_JOINT) # position indices
+    param_idx = np.array(range(dim_x, dim_x + N_PARAM))
+    dim_x += N_PARAM # the body params are states tracked by the filter
+else:
+    ValueError("SPACE must be either 'cartesian' or 'joint'.")
+
+# Define the dimensionality of the measurement space for the filter
+dim_z = N_DIM_PER_KPT * N_KPTS
+
+
+# Load the dataset
+if not LOADING_RESULTS:
+    # Filter the dataset to keep only the selected tasks, velocities, and instructions
+    global_df = pd.DataFrame()
+    for task in SELECTED_TASK_NAMES:
+        print(f"\nTask: {task}")
+        print(f"Selected keypoints: {SELECTED_KEYPOINTS_FOR_EVALUATION[task]}")
+        print(f"Loading dataset: {DATA['CSV_FILES'][task]}")
+
+        # Load the datasets
+        df = pd.read_csv(os.path.join(preprocessed_dir, DATA['CSV_FILES'][task]))
+
+        # Filter the dataset to keep only the selected instructions and velocities
+        df_subset = df[(df['Instruction_id'].isin(SELECTED_INSTRUCTIONS[task])) & (df['Velocity'].isin(SELECTED_VELOCITIES))]
+
+        # Append the filtered dataset to the global dataframe
+        global_df = pd.concat([global_df, df_subset])
+
+
+    # Split the dataset into training and testing
+    train_df = global_df[global_df['Subject'].isin(TRAIN_SUBJECTS)]
+    test_df = global_df[global_df['Subject'].isin(TEST_SUBJECTS)]
+
+    print('\nTraining dataset shape:', train_df.shape)
+    print('Testing dataset shape:', test_df.shape)
+
+
+    print("\nBuild identification and validation datasets...")
+
+    selected_columns = [column for column in column_names['kpt_names_filt'] \
+                        if any(str(kpt) in column.split('kp')[1].split('_') \
+                            for kpt in SELECTED_KEYPOINTS_FOR_KINEMATIC_MODEL)]
+
+    # Define the training data
+    print("\nTraining dataset:")
+    X_train_list, time_train_list, train_traj_idx = \
+        select_trajectory_dataset(
+            train_df,
+            TRAIN_SUBJECTS,
+            SELECTED_INSTRUCTIONS,
+            SELECTED_VELOCITIES,
+            SELECTED_TASK_NAMES,
+            selected_columns # measurement data
+        )
+
+    print("\n==========================================\n")
+
+    # Define the testing data
+    print("\nTesting dataset:")
+    X_test_list, time_test_list, test_traj_idx = \
+        select_trajectory_dataset(
+            test_df,
+            TEST_SUBJECTS,
+            SELECTED_INSTRUCTIONS,
+            SELECTED_VELOCITIES,
+            SELECTED_TASK_NAMES,
+            selected_columns # measurement data
+        )
+
+
+    print("\nInitialize the filter...")
+
+    # Initialize the state covariance matrix
+    if SPACE == 'cartesian':
+        init_P = ukf_predictor.initialize_P(N_VAR_PER_KPT, N_DIM_PER_KPT, N_KPTS, INIT_VAR_POS, INIT_VAR_VEL, INIT_VAR_ACC)
+    elif SPACE == 'joint':
+        init_P = ukf_predictor.initialize_P(N_VAR_PER_KPT, N_DIM_PER_KPT, N_KPTS, INIT_VAR_POS, INIT_VAR_VEL, INIT_VAR_ACC,
+                                            space=SPACE, var_P_param=INIT_VAR_PARAM, n_param=N_PARAM, n_joints=N_JOINTS)
+    else:
+        ValueError("SPACE must be either 'cartesian' or 'joint'.")
+
+
+    print("\nRun the filtering loop for all subjects, identification and validation...")
+
+    tic = time.time()
+
+    # Initialize the SINDy model
+    sindy_model = None
+    if USE_SINDY_MODEL:
+        # Load SINDy model
+        sindy_model = {}
+        import dill # requires dill to load LAMBDA functions
+
+        with open(os.path.join(models_dir, 'sindy_model_chest_pos_legs.pkl'), 'rb') as f:
+            sindy_model['chest_pos_legs'] = dill.load(f)
+        with open(os.path.join(models_dir, 'sindy_model_chest_rot_left_arm.pkl'), 'rb') as f:
+            sindy_model['chest_rot_left_arm'] = dill.load(f)
+        with open(os.path.join(models_dir, 'sindy_model_chest_rot_right_arm.pkl'), 'rb') as f:
+            sindy_model['chest_rot_right_arm'] = dill.load(f)
+        with open(os.path.join(models_dir, 'sindy_model_upper_body.pkl'), 'rb') as f:
+            sindy_model['upper_body'] = dill.load(f)
+
+    # Run the loop for the IDENTIFICATION subjects
+    print("\nTraining dataset:")
+    ukf_predictor.run_filtering_loop(
+        X_train_list, time_train_list, train_traj_idx, PRED_HORIZONS, PREDICT_K_STEPS,
+        dim_x, dim_z, p_idx, DT,
+        N_VAR_PER_KPT, N_DIM_PER_KPT, N_KPTS,
+        init_P, VAR_MEAS_KPT, VAR_Q_ACC,
+        INIT_MU, M, NUM_FILTERS_IN_BANK,
+        ukf_predictor.custom_inv, MAX_TIME_NO_MEAS,
+        PROB_IMM_COLUMN_NAMES, output_column_names,
+        output_dir,
+        'train',
+        space=SPACE,
+        param_idx=param_idx,
+        sindy_model=sindy_model
+    )
+
+    # Run the loop for the VALIDATION subjects
+    print("\n\nTesting dataset:")
+    ukf_predictor.run_filtering_loop(
+        X_test_list, time_test_list, test_traj_idx, PRED_HORIZONS, PREDICT_K_STEPS,
+        dim_x, dim_z, p_idx, DT,
+        N_VAR_PER_KPT, N_DIM_PER_KPT, N_KPTS,
+        init_P, VAR_MEAS_KPT, VAR_Q_ACC,
+        INIT_MU, M, NUM_FILTERS_IN_BANK,
+        ukf_predictor.custom_inv, MAX_TIME_NO_MEAS,
+        PROB_IMM_COLUMN_NAMES, output_column_names,
+        output_dir,
+        'test',
+        space=SPACE,
+        param_idx=param_idx,
+        sindy_model=sindy_model
+    )
+
+    toc = time.time()
+    minutes, seconds = divmod(toc - tic, 60)
+    print(f"Running filtering loops took {minutes:.0f} minutes and {seconds:.2f} seconds.")
+
+
+# ====================================================================================================================================
+print("\nEvaluate error metrics for all subjects, identification and validation...")
 
 tic = time.time()
+ 
+# Load the IDENTIFICATION and VALIDATION results (all pkl files in the output directory)
+pickle_files = glob.glob(os.path.join(output_dir, '*.pkl'))
 
-_, train_filtering_results, train_prediction_results = ukf_predictor.run_filtering_loop(
-    trigger_data, measurement_data,
-    train_subjects, VELOCITIES, TASK_NAMES, PRED_HORIZONS, predict_k_steps,
-    dim_x, dim_z, p_idx, dt,
-    n_var_per_dof, n_dim_per_kpt, n_kpts,
-    init_P, var_r, var_q,
-    mu, M, num_filters_in_bank,
-    ukf_predictor.custom_inv, max_time_no_meas,
-    filtered_column_names, filtered_pred_column_names, col_names_prob_imm
-)
+# Olny select files that contain the string SPACE
+pickle_files = [file for file in pickle_files if SPACE in file]
 
-for horizon in PRED_HORIZONS:
-    evaluate_metrics(train_subjects, VELOCITIES, TASK_NAMES, KEYPOINTS, DIMENSIONS_PER_KEYPOINT,
-                     n_var_per_dof, n_dim_per_kpt, dim_x, horizon,
-                     train_filtering_results, train_prediction_results, results_dir)
+# Print the files that will be loaded line by line
+print("\nPickle files available:")
+for file in pickle_files:
+    print(file)
 
-toc = time.time()
-minutes, seconds = divmod(toc - tic, 60)
-print(f"[IDENTIFICATION] Metrics evaluation took {minutes:.0f} minutes and {seconds:.2f} seconds.")
-
-
-# ====================================================================================================
-print("\n5 / 5. Evaluate error metrics for all filters for the VALIDATION subjects...")
-
-tic = time.time()
-
-_, test_filtering_results, test_prediction_results = ukf_predictor.run_filtering_loop(
-    trigger_data, measurement_data,
-    test_subjects, VELOCITIES, TASK_NAMES, PRED_HORIZONS, predict_k_steps,
-    dim_x, dim_z, p_idx, dt,
-    n_var_per_dof, n_dim_per_kpt, n_kpts,
-    init_P, var_r, var_q,
-    mu, M, num_filters_in_bank,
-    ukf_predictor.custom_inv, max_time_no_meas,
-    filtered_column_names, filtered_pred_column_names, col_names_prob_imm
-)    
+conf_names = output_column_names['filtered_joint_column_names'] \
+    if SPACE == 'joint' else output_column_names['filtered_column_names']
 
 for horizon in PRED_HORIZONS:
-    evaluate_metrics(test_subjects, VELOCITIES, TASK_NAMES, KEYPOINTS, DIMENSIONS_PER_KEYPOINT,
-                     n_var_per_dof, n_dim_per_kpt, dim_x, horizon,
-                     test_filtering_results, test_prediction_results, results_dir)
+    # Load the results for the IDENTIFICATION subjects
+    for file in pickle_files:
+        if f'train_filtering_results_{horizon}_steps' in file:
+            with open(file, 'rb') as f:
+                print(f"\nLoading file: {file}...")
+                train_filtering_results = pickle.load(f)
+        elif f'train_prediction_results_{horizon}_steps' in file:
+            with open(file, 'rb') as f:
+                print(f"Loading file: {file}...")
+                train_prediction_results = pickle.load(f)
+
+    # Evaluate the metrics for the IDENTIFICATION subjects
+    print('\nIDENTIFICATION')
+    ukf_predictor.evaluate_metrics(
+        TRAIN_SUBJECTS, SELECTED_VELOCITIES, SELECTED_TASK_NAMES, SELECTED_INSTRUCTIONS,
+        SELECTED_KEYPOINTS_FOR_EVALUATION, DIMENSIONS_PER_KEYPOINT,
+        N_VAR_PER_KPT, N_DIM_PER_KPT, dim_x, horizon,
+        train_filtering_results, train_prediction_results, results_dir,
+        space_compute=SPACE, space_eval=SPACE_FOR_EVALUATION,
+        conf_names=conf_names
+    )
+
+    # Free up memory
+    del train_filtering_results, train_prediction_results
+
+    # Load the results for the VALIDATION subjects
+    for file in pickle_files:
+        if f'test_filtering_results_{horizon}_steps' in file:
+            with open(file, 'rb') as f:
+                print(f"\nLoading file: {file}...")
+                test_filtering_results = pickle.load(f)
+        elif f'test_prediction_results_{horizon}_steps' in file:
+            with open(file, 'rb') as f:
+                print(f"Loading file: {file}...")
+                test_prediction_results = pickle.load(f)
+
+    print('\nVALIDATION')
+    # Evaluate the metrics for the VALIDATION subjects
+    ukf_predictor.evaluate_metrics(
+        TEST_SUBJECTS, SELECTED_VELOCITIES, SELECTED_TASK_NAMES, SELECTED_INSTRUCTIONS,
+        SELECTED_KEYPOINTS_FOR_EVALUATION, DIMENSIONS_PER_KEYPOINT,
+        N_VAR_PER_KPT, N_DIM_PER_KPT, dim_x, horizon,
+        test_filtering_results, test_prediction_results, results_dir,
+        space_compute=SPACE, space_eval=SPACE_FOR_EVALUATION,
+        conf_names=conf_names
+    )
+
+    # Free up memory
+    del test_filtering_results, test_prediction_results
+
+    print('\n')
     
 toc = time.time()
 minutes, seconds = divmod(toc - tic, 60)
-print(f"[VALIDATION] Metrics evaluation took {minutes:.0f} minutes and {seconds:.2f} seconds.")
+print(f"Metrics evaluation took {minutes:.0f} minutes and {seconds:.2f} seconds.")

@@ -468,7 +468,8 @@ def evaluate_metrics(subjects, velocities, tasks, instructions,
                      keypoints, dim_name_per_kpt,
                      n_var_per_dof, n_dim_per_kpt, dim_x, k,
                      filtering_results, prediction_results, results_dir,
-                     space='cartesian', conf_names=[]):
+                     space_compute='cartesian', space_eval='cartesian',
+                     conf_names=[]):
     
     results = {}
 
@@ -520,7 +521,7 @@ def evaluate_metrics(subjects, velocities, tasks, instructions,
                     imm_states = []
                     imm_variance_idxs = []
 
-                    if space == 'cartesian':
+                    if space_eval == 'cartesian':
                         for kpt in keypoints[task]:
                             for dim in dim_name_per_kpt[kpt]:    
                                 ca_states.append('ca_kp{}_{}'.format(kpt, dim))
@@ -533,7 +534,7 @@ def evaluate_metrics(subjects, velocities, tasks, instructions,
                                 ca_variance_idxs.append(ca_variance_idx)
                                 imm_variance_idxs.append(imm_variance_idx)
 
-                    elif space == 'joint':
+                    elif space_eval == 'joint':
                         visited_confs = []
                         for conf in conf_names:
                             if 'ca' in conf:
@@ -641,8 +642,8 @@ def evaluate_metrics(subjects, velocities, tasks, instructions,
                 ]
     }
     df_results = pd.DataFrame(results)
-    df_results.set_index('Metric', inplace=True)    
-    df_results.to_csv(os.path.join(results_dir,f'results_{k}_steps_{space}.csv'))
+    df_results.set_index('Metric', inplace=True)      
+    df_results.to_csv(os.path.join(results_dir,f'results_{k}_steps_{space_compute}Compute_{space_eval}Eval.csv'))
     
 
 def run_filtering_loop(X_train_list, time_train_list, train_traj_idx,
@@ -819,7 +820,8 @@ def run_filtering_loop(X_train_list, time_train_list, train_traj_idx,
                         # Update the HumanBodyModel with the current joint angles
                         q = np.zeros(28)
                         param = np.zeros(8)
-                        q, param = body_model.inverse_kinematics(kp_in_ext, qbounds, q, param)
+                        if body_model is not None:
+                            q, param = body_model.inverse_kinematics(kp_in_ext, qbounds, q, param) 
 
                 if measure_received and not ukf_initialized:
                     # print(f'[timestamp: {t.total_seconds():.2f}s] Initializing filters with the first measurement.')
@@ -976,11 +978,11 @@ def run_filtering_loop(X_train_list, time_train_list, train_traj_idx,
                     bank_kpt_cov = bank_kpt_cov.flatten()
 
                     # Store the filtered states and covariances in cartesian space
-                    uxs_ca_kpt.append(ca_ukf_kpt)
-                    uxs_cv_kpt.append(cv_ukf_kpt)
-                    uxs_bank_kpt.append(bank_kpt)
-                    uxs_ca_kpt_cov.append(ca_ukf_kpt_cov)
-                    uxs_bank_kpt_cov.append(bank_kpt_cov)
+                    uxs_ca_kpt.append(ca_ukf_kpt) # type: ignore
+                    uxs_cv_kpt.append(cv_ukf_kpt) # type: ignore
+                    uxs_bank_kpt.append(bank_kpt) # type: ignore
+                    uxs_ca_kpt_cov.append(ca_ukf_kpt_cov) # type: ignore
+                    uxs_bank_kpt_cov.append(bank_kpt_cov) # type: ignore
 
 
                 if not k_step_pred_executed:
