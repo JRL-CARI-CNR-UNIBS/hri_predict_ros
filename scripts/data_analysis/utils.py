@@ -1,6 +1,7 @@
 import numpy as np
 import plotly.express as px
 import os
+import pandas as pd
 
 DEFAULT_PLOTLY_COLORS=['rgb(31, 119, 180)', 'rgb(255, 127, 14)',
                        'rgb(44, 160, 44)', 'rgb(214, 39, 40)',
@@ -290,18 +291,21 @@ def plot_filters_PAPER(subject, velocity, task, kpt, dim, k, selected_range,
     fig.write_image(os.path.join(plot_dir, plot_name+ '_PAPER.pdf'), width=720, height=440) # static plot
 
 
-def plot_covariance_cone_PAPER(measurement_split, filtering_results, prediction_results,
-                               subject, velocity, task, kpt, dim,
-                               k, selected_timestamps, selected_range, filter_type, y_axes_lim, plot_dir):
+def plot_covariance_cone(measurement_split, filtering_results, prediction_results,
+                         subject, velocity, task, instruction, kpt, dim, dim_type,
+                         dim_x, n_var_per_dof, n_dim_per_kpt, dt, predict_k_steps,
+                         k, selected_timestamps, selected_range, filter_type, y_axes_lim, plot_dir):
     state = 'kp{}_{}'.format(kpt, dim)
     state_idx = ['x', 'xd', 'xdd', 'y', 'yd', 'ydd', 'z', 'zd', 'zdd'].index(dim) + n_var_per_dof * n_dim_per_kpt * kpt
     variance_idx = dim_x * state_idx + state_idx
 
-    meas = measurement_split[(k, subject, velocity, task)]
+    print("state_idx: ", state_idx)
+
+    meas = measurement_split[(subject, velocity, task, instruction)]
     meas_seconds = (meas["timestamp"] - meas["timestamp"].iloc[0]).dt.total_seconds()
 
-    filt = filtering_results[(k, subject, velocity, task)]['filtered_data']
-    filt_cov = filtering_results[(k, subject, velocity, task)]['filtered_data_cov']
+    filt = filtering_results[(k, subject, velocity, task, instruction)]['filtered_data']
+    filt_cov = filtering_results[(k, subject, velocity, task, instruction)]['filtered_data_cov']
     filt_seconds = (filt.index - filt.index[0]).total_seconds()
 
     # Select time range before plotting between selected_range[0] and selected_range[1]
@@ -327,7 +331,8 @@ def plot_covariance_cone_PAPER(measurement_split, filtering_results, prediction_
 
     # Plot mesurements
     fig.add_scatter(x=meas_seconds,
-                    y=meas_cut['_'.join(('human',state))],
+                    # y=meas_cut['_'.join(('human',state))],
+                    y=meas_cut.iloc[:, state_idx],
                     mode='markers',
                     name='Measurements',
                     line=dict(color=DEFAULT_PLOTLY_COLORS[0]),

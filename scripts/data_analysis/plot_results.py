@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from utils import plot_covariance_cone_PAPER
+from utils import plot_covariance_cone
 import os, pickle
 
 SRC = {'FOLDER': 'scripts', 'SUBFOLDER': 'data_analysis'}                               # source folder
@@ -8,21 +8,37 @@ DATA = {'FOLDER': 'data',
         'SUBFOLDER_OUTPUT': 'output',
         'SUBFOLDER_PLOTS': 'plots',
 }
+# Define the number of keypoints and joints
+N_KPTS = 13
+N_JOINTS = 28
+N_PARAM = 8                                     # (shoulder_distance, chest_hip_distance, hip_distance,
+                                                # upper_arm_length, lower_arm_length,
+                                                # upper_leg_length, lower_leg_length,
+                                                # head_distance)
+N_VAR_PER_JOINT = 3                             # position, velocity, acceleration
+N_VAR_PER_KPT = 3                               # position, velocity, acceleration
+N_DIM_PER_KPT = 3                               # x, y, z
+
 
 SAMPLING_TIME = 0.1 # seconds
+PREDICT_K_STEPS = True
 PREDICTION_STEPS = 5 # steps
+
 TRAINORTEST = 'train'
 
 # Define the time step to uniformly sample the time range with covariance cones
 CONE_STEP = 1 # seconds
 
+DIM_TYPE = 'pos'
+
 # Plot time series with covariance cones on the predicted estimates [PAPER VERSION]
 FILTER_TYPES = ['CA', 'IMM']
-VELOCITIES = ['SLOW', 'FAST']
-TASKS = ['PICK-&-PLACE', 'WALKING']
-SPACES_COMPUTE = ['CARTESIAN', 'JOINT']
-SPACES_EVAL = ['CARTESIAN', 'JOINT']
-SUBJECT = 'sub_3'
+VELOCITIES = ['FAST']#['SLOW', 'FAST']
+TASKS = ['PICK-&-PLACE']#['PICK-&-PLACE', 'WALKING']
+SPACES_COMPUTE = ['cartesian']#['cartesian', 'joint']
+SPACES_EVAL = ['cartesian']#['cartesian', 'joint']
+SUBJECT = 'sub_9'
+INSTRUCTION = 1
 
 # Get the current working directory
 cwd = os.getcwd()
@@ -37,20 +53,31 @@ os.makedirs(plot_dir, exist_ok=True)
 
 # Plot the time series with covariance cones for each combination of filter type, velocity, task, and space
 for space_c in SPACES_COMPUTE:
+
+    if space_c == 'cartesian':
+        dim_x = N_VAR_PER_KPT * N_DIM_PER_KPT * N_KPTS
+        p_idx = np.arange(0, dim_x, N_VAR_PER_KPT) # position indices
+        param_idx = np.array([]) # no body params are states tracked by the filter
+    elif space_c == 'joint':
+        dim_x = N_VAR_PER_JOINT * N_JOINTS
+        p_idx = np.arange(0, dim_x, N_VAR_PER_JOINT) # position indices
+        param_idx = np.array(range(dim_x, dim_x + N_PARAM))
+        dim_x += N_PARAM # the body params are states tracked by the filter
+    else:
+        ValueError("SPACE must be either 'cartesian' or 'joint'.")
+
     for space_e in SPACES_EVAL:
-        assert space_e == 'CARTESIAN' if space_c == 'CARTESIAN' else True, \
+        assert space_e == 'cartesian' if space_c == 'cartesian' else True, \
             'The evaluation space must be CARTESIAN if the computation space is CARTESIAN'
 
         for filter_type in FILTER_TYPES:
             for velocity in VELOCITIES:
                 for task in TASKS:
 
-                    if space_e == 'CARTESIAN':
+                    if space_e == 'cartesian':
                         # Load the measurements
-                        # Load the filtering results
-                        !!!SALVARE MEASUREMENTS E CONTROLLARE!!!
                         file = os.path.join(data_dir,
-                                            f'{TRAINORTEST}_measurements_{PREDICTION_STEPS}_steps_{space_c}.pkl') #TODO
+                                            f'{TRAINORTEST}_measurements_{space_c}_.pkl') #TODO
                         
                         with open(file, 'rb') as f:
                             print(f"\nLoading file: {file}...")
@@ -58,7 +85,7 @@ for space_c in SPACES_COMPUTE:
 
                         # Load the filtering results
                         file = os.path.join(data_dir,
-                                            f'{TRAINORTEST}_filtering_results_{PREDICTION_STEPS}_steps_{space_c}.pkl')
+                                            f'{TRAINORTEST}_filtering_results_{PREDICTION_STEPS}_steps_{space_c}_.pkl')
                         
                         with open(file, 'rb') as f:
                             print(f"\nLoading file: {file}...")
@@ -66,7 +93,7 @@ for space_c in SPACES_COMPUTE:
 
                         # Load the prediction results
                         file = os.path.join(data_dir,
-                                            f'{TRAINORTEST}_prediction_results_{PREDICTION_STEPS}_steps_{space_c}.pkl')
+                                            f'{TRAINORTEST}_prediction_results_{PREDICTION_STEPS}_steps_{space_c}_.pkl')
                         
                         with open(file, 'rb') as f:
                             print(f"Loading file: {file}...")
@@ -115,7 +142,8 @@ for space_c in SPACES_COMPUTE:
                     upper_bound = pd.Timedelta(seconds=end_meas)
                     selected_range = [lower_bound, upper_bound]
 
-                    plot_covariance_cone_PAPER(measurements, filtering_results, prediction_results,
-                                               SUBJECT, velocity, task, kpt, dim, PREDICTION_STEPS,
-                                               selected_timestamps, selected_range, filter_type, y_axes_lim,
-                                               plot_dir)
+                    plot_covariance_cone(measurements, filtering_results, prediction_results,
+                                         SUBJECT, velocity, task, INSTRUCTION, kpt, dim, DIM_TYPE,
+                                         dim_x, N_VAR_PER_KPT, N_DIM_PER_KPT, SAMPLING_TIME, PREDICTION_STEPS,
+                                         PREDICTION_STEPS, selected_timestamps, selected_range, filter_type, y_axes_lim,
+                                         plot_dir)

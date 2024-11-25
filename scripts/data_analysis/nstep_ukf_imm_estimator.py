@@ -672,6 +672,7 @@ def run_filtering_loop(X_train_list, time_train_list, train_traj_idx,
         filt_param_col_names = output_col_names['filtered_param_names']
 
     # Loop over the prediction horizons
+    measurements_saved = False
     for hor_idx, k in enumerate(pred_horizons):
         # Create dictionary to store results
         measurement_split = {}   # dictionary of DataFrames with the measurements split by task
@@ -745,7 +746,8 @@ def run_filtering_loop(X_train_list, time_train_list, train_traj_idx,
             zs = pd.DataFrame([time_info, meas], index=['timestamp', 'meas']).T
             zs['timestamp'] = pd.to_timedelta(zs['timestamp'], unit='s')
 
-            measurement_split[(k, subject_id, velocity, task, instruction)] = zs
+            if not measurements_saved:
+                measurement_split[(subject_id, velocity, task, instruction)] = zs
 
             # If zs only contains NaN values, skip the current iteration
             nan_idxs = zs['meas'].apply(lambda x: all(pd.isna(x)))
@@ -1116,6 +1118,12 @@ def run_filtering_loop(X_train_list, time_train_list, train_traj_idx,
         # Save the results for the current prediction horizon and free up memory
         print(f"Saving results for {k} steps ahead to a compressed archive and freeing up memory...")
         tic = time.time()
+        if not measurements_saved:
+            with open(os.path.join(results_dir,
+                               '_'.join([filename, 'measurements', space, '.pkl'])), 'wb') as f:
+                pickle.dump(measurement_split, f, protocol=pickle.HIGHEST_PROTOCOL)
+            measurements_saved = True
+            del measurement_split
         with open(os.path.join(results_dir,
                                '_'.join([filename, 'filtering_results', str(k), 'steps', space, '.pkl'])), 'wb') as f:
             pickle.dump(filtering_results, f, protocol=pickle.HIGHEST_PROTOCOL)
