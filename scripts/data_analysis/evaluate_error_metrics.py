@@ -37,6 +37,21 @@ SELECTED_INSTRUCTIONS = {
 SELECTED_VELOCITIES = ['FAST']#['SLOW', 'MEDIUM', 'FAST']                                        # select which velocities to consider
 SELECTED_TASK_NAMES = ['PICK-&-PLACE']#['PICK-&-PLACE', 'WALKING', 'PASSING-BY']                         # select which tasks to consider
 SELECTED_KEYPOINTS_FOR_KINEMATIC_MODEL = [0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]    # select which keypoints to consider for the kinematic model
+SELECTED_KPT_NAMES = {
+    0: "head",
+    5: "left_shoulder",
+    6: "left_elbow",
+    7: "left_wrist",
+    11: "left_hip",
+    12: "left_knee",
+    13: "left_ankle",
+    2: "right_shoulder",
+    3: "right_elbow",
+    4: "right_wrist",
+    8: "right_hip",
+    9: "right_knee",
+    10: "right_ankle"
+}
 
 TRAIN_SUBJECTS = ['sub_9', 'sub_4', 'sub_11', 'sub_7', 'sub_8', 'sub_10', 'sub_6']      # select which subjects to use for training
 TEST_SUBJECTS = ['sub_13', 'sub_12', 'sub_3']                                           # select which subjects to use for testing
@@ -160,11 +175,11 @@ for col in COLUMN_NAMES_IDX:
 # CARTESIAN SPACE: always done
 filtered_column_names = ['{}_kp{}_{}'.format(filt_type, i, suffix)
                          for filt_type in ['ca', 'cv', 'imm']
-                         for i in range(N_KPTS)
+                         for i in SELECTED_KEYPOINTS_FOR_KINEMATIC_MODEL
                          for suffix in ['x', 'xd', 'xdd', 'y', 'yd', 'ydd', 'z', 'zd', 'zdd']]
 filtered_pred_column_names = ['{}_kp{}_{}'.format(filt_type, i, suffix)
                               for filt_type in ['ca', 'imm']
-                              for i in range(N_KPTS)
+                              for i in SELECTED_KEYPOINTS_FOR_KINEMATIC_MODEL
                               for suffix in ['x', 'xd', 'xdd', 'y', 'yd', 'ydd', 'z', 'zd', 'zdd']]
 
 # JOINT SPACE: only done if the flag is set
@@ -318,6 +333,7 @@ if not LOADING_RESULTS:
         INIT_MU, M, NUM_FILTERS_IN_BANK,
         ukf_predictor.custom_inv, MAX_TIME_NO_MEAS,
         PROB_IMM_COLUMN_NAMES, output_column_names,
+        SELECTED_KPT_NAMES, SELECTED_KEYPOINTS_FOR_KINEMATIC_MODEL,
         output_dir,
         'train',
         space=SPACE,
@@ -335,6 +351,7 @@ if not LOADING_RESULTS:
         INIT_MU, M, NUM_FILTERS_IN_BANK,
         ukf_predictor.custom_inv, MAX_TIME_NO_MEAS,
         PROB_IMM_COLUMN_NAMES, output_column_names,
+        SELECTED_KPT_NAMES, SELECTED_KEYPOINTS_FOR_KINEMATIC_MODEL,
         output_dir,
         'test',
         space=SPACE,

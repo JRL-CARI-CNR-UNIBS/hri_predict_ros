@@ -6,8 +6,9 @@ import os, pickle
 SRC = {'FOLDER': 'scripts', 'SUBFOLDER': 'data_analysis'}                               # source folder
 DATA = {'FOLDER': 'data',
         'SUBFOLDER_OUTPUT': 'output',
-        'SUBFOLDER_PLOTS': 'plots',
 }
+RESULTS = {'FOLDER': 'results', 'SUBFOLDER_PLOTS': 'plots'}
+
 # Define the number of keypoints and joints
 N_KPTS = 13
 N_JOINTS = 28
@@ -19,15 +20,32 @@ N_VAR_PER_JOINT = 3                             # position, velocity, accelerati
 N_VAR_PER_KPT = 3                               # position, velocity, acceleration
 N_DIM_PER_KPT = 3                               # x, y, z
 
+SELECTED_KEYPOINTS_FOR_KINEMATIC_MODEL = [0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]    # select which keypoints to consider for the kinematic model
+# SELECTED_KPT_NAMES = {
+#     0: "head",
+#     5: "left_shoulder",
+#     6: "left_elbow",
+#     7: "left_wrist",
+#     11: "left_hip",
+#     12: "left_knee",
+#     13: "left_ankle",
+#     2: "right_shoulder",
+#     3: "right_elbow",
+#     4: "right_wrist",
+#     8: "right_hip",
+#     9: "right_knee",
+#     10: "right_ankle"
+# }
 
 SAMPLING_TIME = 0.1 # seconds
 PREDICT_K_STEPS = True
 PREDICTION_STEPS = 5 # steps
+NUM_SIGMAS = 1 # number of standard deviations for the covariance cones
 
 TRAINORTEST = 'train'
 
 # Define the time step to uniformly sample the time range with covariance cones
-CONE_STEP = 1 # seconds
+CONE_STEP = 0.1 # seconds
 
 DIM_TYPE = 'pos'
 
@@ -37,7 +55,7 @@ VELOCITIES = ['FAST']#['SLOW', 'FAST']
 TASKS = ['PICK-&-PLACE']#['PICK-&-PLACE', 'WALKING']
 SPACES_COMPUTE = ['cartesian']#['cartesian', 'joint']
 SPACES_EVAL = ['cartesian']#['cartesian', 'joint']
-SUBJECT = 'sub_9'
+SUBJECT = 'sub_4'
 INSTRUCTION = 1
 
 # Get the current working directory
@@ -48,7 +66,7 @@ pkg_dir = cwd.split(SRC['FOLDER'])[0].split(SRC['SUBFOLDER'])[0]
 
 # Define the data and plot directories
 data_dir = os.path.join(pkg_dir, DATA['FOLDER'], DATA['SUBFOLDER_OUTPUT'])
-plot_dir = os.path.join(pkg_dir, DATA['FOLDER'], DATA['SUBFOLDER_PLOTS'])
+plot_dir = os.path.join(pkg_dir, RESULTS['FOLDER'], RESULTS['SUBFOLDER_PLOTS'])
 os.makedirs(plot_dir, exist_ok=True)
 
 # Plot the time series with covariance cones for each combination of filter type, velocity, task, and space
@@ -56,11 +74,9 @@ for space_c in SPACES_COMPUTE:
 
     if space_c == 'cartesian':
         dim_x = N_VAR_PER_KPT * N_DIM_PER_KPT * N_KPTS
-        p_idx = np.arange(0, dim_x, N_VAR_PER_KPT) # position indices
         param_idx = np.array([]) # no body params are states tracked by the filter
     elif space_c == 'joint':
         dim_x = N_VAR_PER_JOINT * N_JOINTS
-        p_idx = np.arange(0, dim_x, N_VAR_PER_JOINT) # position indices
         param_idx = np.array(range(dim_x, dim_x + N_PARAM))
         dim_x += N_PARAM # the body params are states tracked by the filter
     else:
@@ -77,7 +93,7 @@ for space_c in SPACES_COMPUTE:
                     if space_e == 'cartesian':
                         # Load the measurements
                         file = os.path.join(data_dir,
-                                            f'{TRAINORTEST}_measurements_{space_c}_.pkl') #TODO
+                                            f'{TRAINORTEST}_measurements_{space_c}_.pkl')
                         
                         with open(file, 'rb') as f:
                             print(f"\nLoading file: {file}...")
@@ -103,8 +119,8 @@ for space_c in SPACES_COMPUTE:
                         if velocity == 'SLOW':
                             if task == 'PICK-&-PLACE':
                                 y_axes_lim = [0.12, 0.85]
-                                start_meas = 10.0
-                                end_meas = 30.0
+                                start_meas = 0.0
+                                end_meas = 10.0
                                 kpt = 4
                                 dim = 'x'
                             elif task == 'WALKING':
@@ -117,7 +133,7 @@ for space_c in SPACES_COMPUTE:
                             if task == 'PICK-&-PLACE':
                                 y_axes_lim = [-0.3, 1.15]
                                 start_meas = 0.0
-                                end_meas = 20.0
+                                end_meas = 10.0
                                 kpt = 4
                                 dim = 'x'
                             elif task == 'WALKING':
@@ -127,14 +143,20 @@ for space_c in SPACES_COMPUTE:
                                 kpt = 0
                                 dim = 'y'
                     elif space_e == 'JOINT':
-                        pass
+                        pass #TODO: implement the evaluation in joint space
                     else:
                         raise ValueError('Invalid space for evaluation')
+                    
+                    # Clip start and end times to the range of the measurements
+                    start_meas = max(start_meas, measurements[(SUBJECT, velocity, task, INSTRUCTION)].index[0].total_seconds())
+                    end_meas = min(end_meas, measurements[(SUBJECT, velocity, task, INSTRUCTION)].index[-1].total_seconds())
+
+                    assert start_meas < end_meas, 'The start time must be less than the end time.'
 
                     # Define a list of pd.Timedelta to uniformly sample the time range
-                    selected_timestamps = [pd.Timedelta(seconds=s)
-                                           for s in np.arange(start_meas+SAMPLING_TIME*PREDICTION_STEPS,
-                                                              end_meas-CONE_STEP,
+                    selected_timestamps = [pd.Timedelta(seconds=round(s, 1))
+                                           for s in np.arange(start_meas,
+                                                              end_meas-SAMPLING_TIME*PREDICTION_STEPS,
                                                               CONE_STEP)]
 
                     # Define the time range to plot the time series
@@ -142,8 +164,11 @@ for space_c in SPACES_COMPUTE:
                     upper_bound = pd.Timedelta(seconds=end_meas)
                     selected_range = [lower_bound, upper_bound]
 
+                    # Find the positional index of kpt
+                    kpt_idx = SELECTED_KEYPOINTS_FOR_KINEMATIC_MODEL.index(kpt)
+
                     plot_covariance_cone(measurements, filtering_results, prediction_results,
-                                         SUBJECT, velocity, task, INSTRUCTION, kpt, dim, DIM_TYPE,
+                                         SUBJECT, velocity, task, INSTRUCTION, kpt, kpt_idx, dim, DIM_TYPE,
                                          dim_x, N_VAR_PER_KPT, N_DIM_PER_KPT, SAMPLING_TIME, PREDICTION_STEPS,
                                          PREDICTION_STEPS, selected_timestamps, selected_range, filter_type, y_axes_lim,
-                                         plot_dir)
+                                         plot_dir, num_sigmas=NUM_SIGMAS)

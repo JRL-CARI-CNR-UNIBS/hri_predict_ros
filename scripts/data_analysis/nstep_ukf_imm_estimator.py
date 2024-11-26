@@ -6,6 +6,7 @@ from filterpy.kalman import UnscentedKalmanFilter, MerweScaledSigmaPoints, IMMEs
 from filterpy.common import Q_discrete_white_noise
 from scipy.linalg import block_diag
 from multipledispatch import dispatch
+from utils import compute_state_indices
 
 pd.options.mode.chained_assignment = None  # default='warn'
 
@@ -303,6 +304,8 @@ def initialize_filters(dim_x, dim_z, p_idx, dt,
         filters = [copy.deepcopy(ca_ukf), ca_no_ukf, copy.deepcopy(cv_ukf)]
 
     bank = IMMEstimator(filters, mu, M)
+    bank.x = np.nan * np.ones(dim_x)
+    bank.P = init_P
 
     return (ca_ukf, cv_ukf, bank)
 
@@ -515,47 +518,11 @@ def evaluate_metrics(subjects, velocities, tasks, instructions,
                     kpred = kpred.drop(discarded_rows)
                     kpred_var = kpred_var.drop(discarded_rows)
                     
-
-                    ca_states = []
-                    ca_variance_idxs = []
-                    imm_states = []
-                    imm_variance_idxs = []
-
-                    if space_eval == 'cartesian':
-                        for kpt in keypoints[task]:
-                            for dim in dim_name_per_kpt[kpt]:    
-                                ca_states.append('ca_kp{}_{}'.format(kpt, dim))
-                                imm_states.append('imm_kp{}_{}'.format(kpt, dim))
-                                state_idx = ['x', 'xd', 'xdd', 'y', 'yd', 'ydd', 'z', 'zd', 'zdd'].index(dim) + n_var_per_dof * n_dim_per_kpt * kpt
-                                
-                                ca_variance_idx = dim_x * state_idx + state_idx
-                                imm_variance_idx = dim_x * state_idx + state_idx + dim_x * dim_x
-                                
-                                ca_variance_idxs.append(ca_variance_idx)
-                                imm_variance_idxs.append(imm_variance_idx)
-
-                    elif space_eval == 'joint':
-                        visited_confs = []
-                        for conf in conf_names:
-                            if 'ca' in conf:
-                                ca_states.append(conf)
-                                substring = conf.split('ca_', 1)[1]
-                            elif 'imm' in conf:
-                                imm_states.append(conf)
-                                substring = conf.split('imm_', 1)[1]
-                            else:
-                                continue
-
-                            if substring not in visited_confs:
-                                state_idx = conf_names.index(conf)
-                                
-                                ca_variance_idx = dim_x * state_idx + state_idx
-                                imm_variance_idx = dim_x * state_idx + state_idx + dim_x * dim_x
-
-                                ca_variance_idxs.append(ca_variance_idx)
-                                imm_variance_idxs.append(imm_variance_idx)
-
-                            visited_confs.append(substring)  
+                    # Compute the state indices for the CA and IMM filters
+                    ca_states, imm_states, \
+                        ca_variance_idxs, imm_variance_idxs = \
+                            compute_state_indices(space_eval, keypoints, task, dim_name_per_kpt,
+                                n_var_per_dof, n_dim_per_kpt, dim_x, conf_names)
 
                     # Only compute metrics if both filtered and predicted data are available
                     # i.e., filt-kpred do not produce all NaN rows
@@ -655,6 +622,7 @@ def run_filtering_loop(X_train_list, time_train_list, train_traj_idx,
                        custom_inv, max_time_no_meas,
                        prob_imm_col_names,
                        output_col_names,
+                       selected_kpt_names, selected_keypoints_for_kinematic_model,
                        results_dir,
                        filename,
                        space='cartesian',
@@ -670,6 +638,11 @@ def run_filtering_loop(X_train_list, time_train_list, train_traj_idx,
         filt_joint_col_names = output_col_names['filtered_joint_column_names']
         filt_pred_joint_col_names = output_col_names['filtered_pred_joint_column_names']
         filt_param_col_names = output_col_names['filtered_param_names']
+
+    # Define the column names for the measurements
+    measurements_column_names = ['kp{}_{}'.format(i, axis)
+                                for i in selected_keypoints_for_kinematic_model
+                                for axis in ['x', 'y', 'z']]
 
     # Loop over the prediction horizons
     measurements_saved = False
@@ -743,21 +716,21 @@ def run_filtering_loop(X_train_list, time_train_list, train_traj_idx,
             meas = X_train_list[traj_idx]
             time_info = time_train_list[traj_idx]
 
-            zs = pd.DataFrame([time_info, meas], index=['timestamp', 'meas']).T
-            zs['timestamp'] = pd.to_timedelta(zs['timestamp'], unit='s')
+            zs = pd.DataFrame(meas, columns=measurements_column_names)
+            zs['timestamp'] = pd.to_timedelta(time_info, unit='s')
+            zs.set_index('timestamp', inplace=True)
 
-            if not measurements_saved:
-                measurement_split[(subject_id, velocity, task, instruction)] = zs
+            measurement_split[(subject_id, velocity, task, instruction)] = zs
 
             # If zs only contains NaN values, skip the current iteration
-            nan_idxs = zs['meas'].apply(lambda x: all(pd.isna(x)))
+            nan_idxs = zs.apply(lambda x: all(pd.isna(x)), axis=1)
             if nan_idxs.all():
                 print(f"Skipping {subject_id} - {velocity} - {task} for {k} steps ahead.")
                 continue
 
             # Define times
-            t = zs["timestamp"].iloc[0]
-            t_end = zs["timestamp"].iloc[-1]
+            t = zs.index[0]
+            t_end = zs.index[-1]
             t_incr = pd.Timedelta(seconds=dt)
 
             print("Start time:", t, " [s] | End time:", t_end, " [s]")
@@ -792,30 +765,19 @@ def run_filtering_loop(X_train_list, time_train_list, train_traj_idx,
                 k_step_pred_executed = False
 
                 # Get the measurements in the current time window
-                tmp_db =zs.loc[(zs["timestamp"]>=t) & (zs["timestamp"]<=t+t_incr)]
+                tmp_db =zs.loc[(zs.index>=t) & (zs.index<=t+t_incr)]
                 measure_received = False
                 if (tmp_db.shape[0] > 0):
-                    z = tmp_db.iloc[-1]['meas'] # Select the last measurement in the time window
+                    z = tmp_db.iloc[-1].to_numpy() # Select the last measurement in the time window
                     measure_received = not np.isnan(z).any() # Consider the measurement only if it is not NaN
                     
                 if space == 'joint':
                     if measure_received:
                         # Update the Keypoints object with the current joint angles
-                        kpts = {
-                            "head":           z[0:3],
-                            "left_shoulder":  z[3:6],
-                            "left_elbow":     z[6:9],
-                            "left_wrist":     z[9:12],
-                            "left_hip":       z[12:15],
-                            "left_knee":      z[15:18],
-                            "left_ankle":     z[18:21],
-                            "right_shoulder": z[21:24],
-                            "right_elbow":    z[24:27],
-                            "right_wrist":    z[27:30],
-                            "right_hip":      z[30:33],
-                            "right_knee":     z[33:36],
-                            "right_ankle":    z[36:39]
-                        }
+                        kpts = {}
+                        for key, value in selected_kpt_names.items():
+                            kpts[value] = z[selected_keypoints_for_kinematic_model.index(key)*3 : \
+                                            selected_keypoints_for_kinematic_model.index(key)*3+3]
 
                         kp_in_ext.set_keypoints(kpts)
                         
@@ -830,17 +792,23 @@ def run_filtering_loop(X_train_list, time_train_list, train_traj_idx,
                     # initial state: [pos, vel, acc] = [current measured position, 0.0, 0.0]
                     ca_ukf.x = np.zeros(dim_x)
                     ca_ukf.x[p_idx] = (z if space == 'cartesian' else q)
-                    if space == 'joint':
-                        ca_ukf.x[param_idx] = param 
+
                     cv_ukf.x = np.zeros(dim_x)
                     cv_ukf.x[p_idx] = (z if space == 'cartesian' else q)
-                    if space == 'joint':
-                        cv_ukf.x[param_idx] = param 
+
+                    bank.x = np.zeros(dim_x)
+                    bank.x[p_idx] = (z if space == 'cartesian' else q)
                     for f in bank.filters:
                         f.x = np.zeros(dim_x)
                         f.x[p_idx] = (z if space == 'cartesian' else q)
                         if space == 'joint':
-                            f.x[param_idx] = param 
+                            f.x[param_idx] = param
+
+                    if space == 'joint':
+                        ca_ukf.x[param_idx] = param 
+                        cv_ukf.x[param_idx] = param 
+                        bank.x[param_idx] = param
+                        
                     ukf_initialized = True
 
                 else:
@@ -1118,20 +1086,24 @@ def run_filtering_loop(X_train_list, time_train_list, train_traj_idx,
         # Save the results for the current prediction horizon and free up memory
         print(f"Saving results for {k} steps ahead to a compressed archive and freeing up memory...")
         tic = time.time()
+        
+        # Save the measurements to a pickle file
         if not measurements_saved:
             with open(os.path.join(results_dir,
                                '_'.join([filename, 'measurements', space, '.pkl'])), 'wb') as f:
                 pickle.dump(measurement_split, f, protocol=pickle.HIGHEST_PROTOCOL)
             measurements_saved = True
             del measurement_split
+        
+        # Save the filtering and prediction results to a pickle file
         with open(os.path.join(results_dir,
                                '_'.join([filename, 'filtering_results', str(k), 'steps', space, '.pkl'])), 'wb') as f:
             pickle.dump(filtering_results, f, protocol=pickle.HIGHEST_PROTOCOL)
         with open(os.path.join(results_dir,
                                '_'.join([filename, 'prediction_results', str(k), 'steps', space, '.pkl'])), 'wb') as f:
             pickle.dump(prediction_results, f,protocol=pickle.HIGHEST_PROTOCOL)
-
         del filtering_results, prediction_results
+
         toc = time.time()
         print(f"Results for {k} steps ahead saved and memory freed up. Time elapsed: {toc-tic:.2f} seconds.")
 

@@ -291,48 +291,81 @@ def plot_filters_PAPER(subject, velocity, task, kpt, dim, k, selected_range,
     fig.write_image(os.path.join(plot_dir, plot_name+ '_PAPER.pdf'), width=720, height=440) # static plot
 
 
-def plot_covariance_cone(measurement_split, filtering_results, prediction_results,
-                         subject, velocity, task, instruction, kpt, dim, dim_type,
+# Define state indices for the CA and IMM filters
+def compute_state_indices(space, keypoints, task, dim_name_per_kpt,
+                          n_var_per_dof, n_dim_per_kpt, dim_x, conf_names):
+    ca_states, imm_states, ca_variance_idxs, imm_variance_idxs = [], [], [], []
+    if space == 'cartesian':
+        for kpt in keypoints[task]:
+            for dim in dim_name_per_kpt[kpt]:    
+                ca_states.append('ca_kp{}_{}'.format(kpt, dim))
+                imm_states.append('imm_kp{}_{}'.format(kpt, dim))
+                state_idx = ['x', 'xd', 'xdd', 'y', 'yd', 'ydd', 'z', 'zd', 'zdd'].index(dim) + n_var_per_dof * n_dim_per_kpt * kpt
+                
+                ca_variance_idx = dim_x * state_idx + state_idx
+                imm_variance_idx = dim_x * state_idx + state_idx + dim_x * dim_x
+                
+                ca_variance_idxs.append(ca_variance_idx)
+                imm_variance_idxs.append(imm_variance_idx)
+
+    elif space == 'joint':
+        visited_confs = []
+        for conf in conf_names:
+            if 'ca' in conf:
+                ca_states.append(conf)
+                substring = conf.split('ca_', 1)[1]
+            elif 'imm' in conf:
+                imm_states.append(conf)
+                substring = conf.split('imm_', 1)[1]
+            else:
+                continue
+
+            if substring not in visited_confs:
+                state_idx = conf_names.index(conf)
+                
+                ca_variance_idx = dim_x * state_idx + state_idx
+                imm_variance_idx = dim_x * state_idx + state_idx + dim_x * dim_x
+
+                ca_variance_idxs.append(ca_variance_idx)
+                imm_variance_idxs.append(imm_variance_idx)
+
+            visited_confs.append(substring)
+
+    else:
+        raise ValueError('Invalid space. Choose between "cartesian" or "joint".')
+    
+    return ca_states, imm_states, ca_variance_idxs, imm_variance_idxs
+
+
+def plot_covariance_cone(measurements, filtering_results, prediction_results,
+                         subject, velocity, task, instruction, kpt_num, kpt_idx, dim, dim_type,
                          dim_x, n_var_per_dof, n_dim_per_kpt, dt, predict_k_steps,
-                         k, selected_timestamps, selected_range, filter_type, y_axes_lim, plot_dir):
-    state = 'kp{}_{}'.format(kpt, dim)
-    state_idx = ['x', 'xd', 'xdd', 'y', 'yd', 'ydd', 'z', 'zd', 'zdd'].index(dim) + n_var_per_dof * n_dim_per_kpt * kpt
-    variance_idx = dim_x * state_idx + state_idx
+                         k, selected_timestamps, selected_range, filter_type, y_axes_lim, plot_dir,
+                         num_sigmas=1):
+                    
+    # Define the state index and the variance index for the selected keypoint and dimension
+    state = 'kp{}_{}'.format(kpt_num, dim)
+    state_idx = ['x', 'xd', 'xdd', 'y', 'yd', 'ydd', 'z', 'zd', 'zdd'].index(dim) + n_var_per_dof * n_dim_per_kpt * kpt_idx
+    ca_variance_idx = dim_x * state_idx + state_idx
+    imm_variance_idx = ca_variance_idx + dim_x * dim_x
 
-    print("state_idx: ", state_idx)
-
-    meas = measurement_split[(subject, velocity, task, instruction)]
-    meas_seconds = (meas["timestamp"] - meas["timestamp"].iloc[0]).dt.total_seconds()
-
+    # Select the measurements and the filtering results for the selected subject, velocity, task, and instruction
+    meas = measurements[(subject, velocity, task, instruction)]
     filt = filtering_results[(k, subject, velocity, task, instruction)]['filtered_data']
     filt_cov = filtering_results[(k, subject, velocity, task, instruction)]['filtered_data_cov']
-    filt_seconds = (filt.index - filt.index[0]).total_seconds()
 
-    # Select time range before plotting between selected_range[0] and selected_range[1]
-    meas_range = (meas['timestamp'] >= selected_range[0]) & (meas['timestamp'] <= selected_range[1])
-    meas_cut = meas.loc[meas_range]
+    # Select time range between selected_range[0] and selected_range[1]
+    meas_cut = meas.loc[selected_range[0]:selected_range[1]]
+    meas_seconds = meas_cut.index.total_seconds()
     filt_cut = filt.loc[selected_range[0]:selected_range[1]]
+    filt_seconds = filt_cut.index.total_seconds()
     
-    filt_seconds = filt.index[(filt.index >= selected_range[0]) & (filt.index <= selected_range[1])].total_seconds()
-    meas_seconds = meas_seconds[meas_range]
-    
-    # Select based on the filter type
-    if filter_type == 'CA':
-        filt_col_name = 'ca'
-    elif filter_type == 'IMM':
-        # select column name as saved in the Pandas DataFrame
-        filt_col_name = 'imm'
-        # append to the front of the IMM filter output the first IMM filter output
-        filt_cut.iloc[0, filt_cut.columns.get_loc('_'.join(('imm', state)))] = filt_cut.iloc[1, filt_cut.columns.get_loc('_'.join(('imm', state)))]
-    else:
-        raise ValueError("Invalid filter type. Use 'CA' or 'IMM'.")
-
+    # Create an empty Plotly line plot
     fig = px.line()
 
     # Plot mesurements
     fig.add_scatter(x=meas_seconds,
-                    # y=meas_cut['_'.join(('human',state))],
-                    y=meas_cut.iloc[:, state_idx],
+                    y=meas_cut[state],
                     mode='markers',
                     name='Measurements',
                     line=dict(color=DEFAULT_PLOTLY_COLORS[0]),
@@ -340,7 +373,7 @@ def plot_covariance_cone(measurement_split, filtering_results, prediction_result
     )
     # Plot filtered data
     fig.add_scatter(x=filt_seconds,
-                    y=filt_cut['_'.join((filt_col_name, state))],
+                    y=filt_cut['_'.join((filter_type.lower(), state))],
                     mode='lines',
                     name=' '.join(('UKF', filter_type)),
                     line=dict(color=DEFAULT_PLOTLY_COLORS[1],
@@ -356,36 +389,36 @@ def plot_covariance_cone(measurement_split, filtering_results, prediction_result
     
     for t in selected_timestamps:
         # Initialize lists to store the next k-step ahead states and confidence limits (1-sigma)
-        std = np.sqrt(filt_cov.loc[t].iloc[variance_idx])
+        std = np.sqrt(filt_cov.loc[t].iloc[ca_variance_idx])
         next_k_states_ca = [filt.loc[t, '_'.join(['ca', state])]]
-        next_k_lcls_ca = [filt.loc[t, '_'.join(['ca', state])] - 1 * std]
-        next_k_ucls_ca = [filt.loc[t, '_'.join(['ca', state])] + 1 * std]
+        next_k_lcls_ca = [filt.loc[t, '_'.join(['ca', state])] - num_sigmas * std]
+        next_k_ucls_ca = [filt.loc[t, '_'.join(['ca', state])] + num_sigmas * std]
         next_k_states_imm = [filt.loc[t, '_'.join(['imm', state])]]
-        next_k_lcls_imm = [filt.loc[t, '_'.join(['imm', state])] - 1 * std]
-        next_k_ucls_imm = [filt.loc[t, '_'.join(['imm', state])] + 1 * std]
+        next_k_lcls_imm = [filt.loc[t, '_'.join(['imm', state])] - num_sigmas * std]
+        next_k_ucls_imm = [filt.loc[t, '_'.join(['imm', state])] + num_sigmas * std]
         times = [t]
 
         for step in range(k):
             # shift the timestamp by step*dt (had been shifted before for visualization purposes)
             t_shifted = t - pd.Timedelta(seconds=(step+1)*dt) 
 
-            kpred = prediction_results[(k, subject, velocity, task)]['kstep_pred_data'][step]
-            kpred_variance = prediction_results[(k, subject, velocity, task)]['kstep_pred_cov'][step]
+            kpred = prediction_results[(k, subject, velocity, task, instruction)]['kstep_pred_data'][step]
+            kpred_variance = prediction_results[(k, subject, velocity, task, instruction)]['kstep_pred_cov'][step]
 
             # CA K-step ahead prediction
-            std = kpred_variance.iloc[:, variance_idx].apply(np.sqrt)
+            std = kpred_variance.iloc[:, ca_variance_idx].apply(np.sqrt)
 
             # Create pandas Series for the upper and lower confidence limits (1-sigma)
-            kpred['_'.join(['ca', state, 'ucl'])] = kpred['_'.join(['ca', state])] + 1 * std
-            kpred['_'.join(['ca', state, 'lcl'])] = kpred['_'.join(['ca', state])] - 1 * std
+            kpred['_'.join(['ca', state, 'ucl'])] = kpred['_'.join(['ca', state])] + num_sigmas * std
+            kpred['_'.join(['ca', state, 'lcl'])] = kpred['_'.join(['ca', state])] - num_sigmas * std
 
             # IMM K-step ahead prediction
             # (the index must be increased by the dimension of the flattened covariance matrix according to the way covariance matrices are stored)
-            std = kpred_variance.iloc[:, variance_idx + dim_x*dim_x].apply(np.sqrt)
+            std = kpred_variance.iloc[:, imm_variance_idx].apply(np.sqrt)
 
             # Create pandas Series for the upper and lower confidence limits (1-sigma)
-            kpred['_'.join(['imm', state, 'ucl'])] = kpred['_'.join(['imm', state])] + 1 * std
-            kpred['_'.join(['imm', state, 'lcl'])] = kpred['_'.join(['imm', state])] - 1 * std
+            kpred['_'.join(['imm', state, 'ucl'])] = kpred['_'.join(['imm', state])] + num_sigmas * std
+            kpred['_'.join(['imm', state, 'lcl'])] = kpred['_'.join(['imm', state])] - num_sigmas * std
 
             t_shifted = t + pd.Timedelta(seconds=(step+1)*dt)
 
@@ -496,21 +529,21 @@ def plot_covariance_cone(measurement_split, filtering_results, prediction_result
 
     # Plot k-step ahead predictions with their confidence intervals
     if predict_k_steps:
-        if filter_type == 'CA':
-            # remove the element k-step ahead prediction at time t=0.4s for visualization purposes
-            kpred_cut.loc[pd.Timedelta(seconds=0.4), '_'.join(('ca', state))] = np.nan
-            kpred_cut.loc[pd.Timedelta(seconds=0.4), '_'.join(('ca', state, 'ucl'))] = np.nan
-            kpred_cut.loc[pd.Timedelta(seconds=0.4), '_'.join(('ca', state, 'lcl'))] = np.nan
+        # if filter_type == 'CA':
+        #     # remove the element k-step ahead prediction at time t=0.4s for visualization purposes
+        #     kpred_cut.loc[pd.Timedelta(seconds=0.4), '_'.join(('ca', state))] = np.nan
+        #     kpred_cut.loc[pd.Timedelta(seconds=0.4), '_'.join(('ca', state, 'ucl'))] = np.nan
+        #     kpred_cut.loc[pd.Timedelta(seconds=0.4), '_'.join(('ca', state, 'lcl'))] = np.nan
 
         fig.add_scatter(x=kpred_seconds,
-                        y=kpred_cut['_'.join((filt_col_name, state))],
+                        y=kpred_cut['_'.join((filter_type.lower(), state))],
                         mode='lines',
                         name=f'{k}-step ahead prediction',
                         line=dict(color=DEFAULT_PLOTLY_COLORS[4],
                                     width=1)
         )
         fig.add_scatter(x=kpred_seconds,
-                        y=kpred_cut['_'.join([filt_col_name, state, 'ucl'])],
+                        y=kpred_cut['_'.join([filter_type.lower(), state, 'ucl'])],
                         mode='lines',
                         name=f'{k}-step ahead prediction (UCL)',
                         marker=dict(color=DEFAULT_PLOTLY_COLORS_ALPHA[4]),
@@ -519,7 +552,7 @@ def plot_covariance_cone(measurement_split, filtering_results, prediction_result
                         showlegend=False
         )
         fig.add_scatter(x=kpred_seconds,
-                        y=kpred_cut['_'.join([filt_col_name, state, 'lcl'])],
+                        y=kpred_cut['_'.join([filter_type.lower(), state, 'lcl'])],
                         mode='lines',
                         name=f'{k}-step ahead prediction (LCL)',
                         marker=dict(color=DEFAULT_PLOTLY_COLORS_ALPHA[4]),
@@ -529,15 +562,15 @@ def plot_covariance_cone(measurement_split, filtering_results, prediction_result
                         showlegend=False
         )
 
-        # Add two vertical lines, one at the first element of selected_timestamps and another 0.5 seconds after
-        # (the line must touch the top and the bottom of the plot)
-        fig.add_vrect(x0=selected_timestamps[0].total_seconds(),
-                      x1=(selected_timestamps[0] + pd.Timedelta(seconds=0.5)).total_seconds(),
-                      fillcolor="LightSalmon",
-                      opacity=0.5,
-                      layer="below",
-                      line_width=0
-        )
+        # # Add two vertical lines, one at the first element of selected_timestamps and another 0.5 seconds after
+        # # (the line must touch the top and the bottom of the plot)
+        # fig.add_vrect(x0=selected_timestamps[0].total_seconds(),
+        #               x1=(selected_timestamps[0] + pd.Timedelta(seconds=0.5)).total_seconds(),
+        #               fillcolor="LightSalmon",
+        #               opacity=0.5,
+        #               layer="below",
+        #               line_width=0
+        # )
     
     # Fix task name
     if task == 'PICK-&-PLACE':
@@ -571,12 +604,14 @@ def plot_covariance_cone(measurement_split, filtering_results, prediction_result
     fig.update_xaxes(range=[selected_range[0].total_seconds(), selected_range[1].total_seconds()])
 
     # Update the y-axis to the given limits to improve visualization
-    fig.update_yaxes(range=y_axes_lim,
-                     title_standoff = 20)
+    # fig.update_yaxes(range=y_axes_lim,
+    #                  title_standoff = 20)
 
     fig.show()
 
     # Save the plot to the plots folder in html format
-    plot_name = '_'.join([subject, velocity, task, state, "dt", str(dt), "k", str(k), str(dim_type), "pred", str(predict_k_steps), "cone", str(filter_type)])
+    plot_name = '_'.join([subject, velocity, task, state, "dt", str(dt),
+                          "k", str(k), str(dim_type), "pred", str(predict_k_steps),
+                          "cone", str(filter_type), "sigmas", str(num_sigmas)])
     fig.write_html(os.path.join(plot_dir, plot_name+ '_PAPER.html')) # interactive plot
-    fig.write_image(os.path.join(plot_dir, plot_name+ '_PAPER.pdf'), width=860, height=480) # static plot
+    fig.write_image(os.path.join(plot_dir, plot_name+ '_PAPER.pdf')) # static plot
