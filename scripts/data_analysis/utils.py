@@ -11,10 +11,10 @@ DEFAULT_PLOTLY_COLORS=['rgb(31, 119, 180)', 'rgb(255, 127, 14)',
 
 # Add transparency to the colors
 alpha = 0.2
-DEFAULT_PLOTLY_COLORS_ALPHA = [color.replace('rgb', 'rgba').replace(')', f', {alpha})') for color in DEFAULT_PLOTLY_COLORS]
+DEFAULT_PLOTLY_COLORS_ALPHA = [color.replace('rgb', 'rgba').replace(')', f', {alpha})') for color in DEFAULT_PLOTLY_COLORS] # used for 5-step ahead prediction CI
 
-alpha = 0.4
-DEFAULT_PLOTLY_COLORS_ALPHA_HIGH = [color.replace('rgb', 'rgba').replace(')', f', {alpha})') for color in DEFAULT_PLOTLY_COLORS]
+alpha = 0.3
+DEFAULT_PLOTLY_COLORS_ALPHA_HIGH = [color.replace('rgb', 'rgba').replace(')', f', {alpha})') for color in DEFAULT_PLOTLY_COLORS] # used for covariance cones
 
 
 # Select a portion of the dataset based on the subjects,
@@ -198,97 +198,6 @@ def plot_time_series(subject, velocity, task, kpt, dim, description,
     plot_name = '_'.join([subject, velocity, task, state, "dt", str(dt), "k", str(k), str(dim_type), "pred", str(predict_k_steps)])
     fig.write_html(os.path.join(plot_dir, plot_name+'.html')) # interactive plot
     fig.write_image(os.path.join(plot_dir, plot_name+ '.pdf')) # static plot
-
-
-def plot_filters_PAPER(subject, velocity, task, kpt, dim, k, selected_range,
-                       dim_type, dt, measurements, filtering_results, plot_dir):
-    state = 'kp{}_{}'.format(kpt, dim)
-   
-    if dim_type == 'pos':
-        meas = measurements[(k, subject, velocity, task)].copy()
-        meas_seconds = (meas["timestamp"] - meas["timestamp"].iloc[0]).dt.total_seconds()
-
-    filt = filtering_results[(k, subject, velocity, task)]['filtered_data']
-    # filt_cov = filtering_results[(k, subject, velocity, task)]['filtered_data_cov']
-    filt_seconds = (filt.index - filt.index[0]).total_seconds()
-
-    fig = px.line()
-
-    # Select time range before plotting between selected_range[0] and selected_range[1]
-    meas_range = (meas['timestamp'] >= selected_range[0]) & (meas['timestamp'] <= selected_range[1])
-    meas_cut = meas.loc[meas_range]
-    filt_cut = filt.loc[selected_range[0]:selected_range[1]]
-    
-    filt_seconds = filt.index[(filt.index >= selected_range[0]) & (filt.index <= selected_range[1])].total_seconds()
-    meas_seconds = meas_seconds[meas_range]
-
-    if dim_type == 'pos':
-        fig.add_scatter(x=meas_seconds,
-                        y=meas_cut['_'.join(('human',state))],
-                        mode='markers',
-                        name='Measurements',
-                        line=dict(color=DEFAULT_PLOTLY_COLORS[0], width=1),
-                        marker=dict(size=3)
-        )
-    fig.add_scatter(x=filt_seconds,
-                    y=filt_cut['_'.join(('ca',state))],
-                    mode='lines+markers',
-                    name='UKF CA',
-                    line=dict(color=DEFAULT_PLOTLY_COLORS[1], width=1),
-                    marker=dict(size=2)
-    )
-    fig.add_scatter(x=filt_seconds,
-                    y=filt_cut['_'.join(('cv',state))],
-                    mode='lines+markers',
-                    name='UKF CV',
-                    line=dict(color=DEFAULT_PLOTLY_COLORS[2], width=1),
-                    marker=dict(size=2)
-    )
-    fig.add_scatter(x=filt_seconds,
-                    y=filt_cut['_'.join(('imm',state))],
-                    mode='lines+markers',
-                    name='UKF IMM',
-                    line=dict(color=DEFAULT_PLOTLY_COLORS[3], width=1),
-                    marker=dict(size=2)
-    )
-    
-    # Fix task name
-    if task == 'PICK-&-PLACE':
-        task = 'REACH-TO-GRASP'
-
-    # Customize the title of the plot
-    fig.update_layout(title=dict(text=f"Left Wrist Keypoint Y-Coordinate<br><sup>Velocity: {velocity}  |  Task: {task}</sup>",
-                                 font=dict(size=25),
-                                 x=0.5,
-                                 y=0.94),
-                      xaxis_title=dict(text='Time (s)',
-                                       font=dict(size=20)),
-                      yaxis_title=dict(text='Position (m)',
-                                    font=dict(size=20)),
-    )
-
-    # Update the legend layout
-    fig.update_layout(legend=dict(orientation="v",
-                                  yanchor="top",
-                                  y=0.985,
-                                  xanchor="right",
-                                  x=0.992,
-                                  font=dict(size=12))
-    )
-
-    # Update the font type
-    fig.update_layout(font_family='Times New Roman',
-                      font_color='black')
-
-    # Update the x-axis layout to match the time range selected by the user        
-    fig.update_xaxes(range=[selected_range[0].total_seconds(), selected_range[1].total_seconds()])
-
-    fig.show()
-
-    # Save the plot to the plots folder in html format
-    plot_name = '_'.join([subject, velocity, task, state, "dt", str(dt), "FILTERS"])
-    fig.write_html(os.path.join(plot_dir, plot_name+ '_PAPER.html')) # interactive plot
-    fig.write_image(os.path.join(plot_dir, plot_name+ '_PAPER.pdf'), width=720, height=440) # static plot
 
 
 # Define state indices for the CA and IMM filters
