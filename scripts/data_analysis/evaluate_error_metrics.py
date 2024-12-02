@@ -30,7 +30,7 @@ COLUMN_NAMES_IDX = ['conf_names', 'conf_names_filt', 'conf_names_vel',
 
 # Select which instructions to consider
 SELECTED_INSTRUCTIONS = {
-    'PICK-&-PLACE': [1],#[1, 2, 3, 4, 5, 6, 7, 8], # discard instruction_id=0, as the subject stands still
+    'PICK-&-PLACE': [3],#[1, 2, 3, 4, 5, 6, 7, 8], # discard instruction_id=0, as the subject stands still
     'WALKING':      [1, 2, 3],                # discard instruction_id=0, as the subject stands still
     'PASSING-BY':   [1, 2] # do not select instruction_id=0, as the subject is outside the camera view
 }                                                 
@@ -74,19 +74,26 @@ DIMENSIONS_PER_KEYPOINT = {0:  ['y'],
                            8:  ['y'],
                            11: ['y']}
 
-# Define possible prediction horizons (in steps)
-PRED_HORIZONS = [1, 3, 5]
+# Define possible prediction horizons (in seconds)
+PRED_HORIZONS = [0.1, 0.3, 0.5]
 
 # Define whether to load the results from the pickle files
 LOADING_RESULTS = False
 
+# Define whether to tune the variance parameters
+TUNE_INIT_VARIANCE_JOINTS = True
+NUM_MONTECARLO_SAMPLES = 10000
+
 # Define the space in which the filter operates
-SPACE = 'cartesian'                             # 'cartesian' or 'joint'
+SPACE = 'joint'                             # 'cartesian' or 'joint'
 # Define the space in which the error metrics are evaluated
 SPACE_FOR_EVALUATION = 'cartesian'              # 'cartesian' or 'joint'
 
 assert SPACE_FOR_EVALUATION == 'cartesian' if SPACE == 'cartesian' else True, \
     "SPACE_FOR_EVALUATION must be 'cartesian' if SPACE is 'cartesian'."
+
+assert SPACE == 'joint' and not LOADING_RESULTS if TUNE_INIT_VARIANCE_JOINTS else True, \
+    "SPACE must be 'joint' and LOADING_RESULTS must be False if TUNE_INIT_VARIANCE_JOINTS is True."
 
 # Define the number of keypoints and joints
 N_KPTS = 13
@@ -107,24 +114,29 @@ N_DIM_PER_KPT = 3                               # x, y, z
 MAX_TIME_NO_MEAS = pd.Timedelta(seconds= 0.1)   # maximum time without measurements before resetting the filter
 
 # Initial uncertainty parameters for the filters
-VAR_MEAS_KPT = 0.0025           # [paper: r_y] Hip: 3-sigma (99.5%) = 0.15 m ==> sigma 0.05 m ==> var = (0.05)^2 m^2
-VAR_Q_ACC = 0.01                # [paper: q_a] a_dot = u (u = 0 is very uncertain ==> add variance here)
+VAR_MEAS_KPT = 0.05**2           # [paper: r_y] Hip: 3-sigma (99.5%) = 0.15 m ==> sigma 0.05 m ==> var = (0.05)^2 m^2
+VAR_Q_ACC = 0.01                 # [paper: q_a] [TUNABLE] a_dot = u (u = 0 is very uncertain ==> add variance here)
 
 if SPACE == 'cartesian':
     INIT_VAR_POS = VAR_MEAS_KPT     # [paper: p_y] Set equal to the measurement noise since the state is initialized with the measurement
-    INIT_VAR_VEL = 0.02844          # [paper: p_v] Hip: no keypoint moves faster than 1.6 m/s ==> 3-sigma (99.5%) = 1.6 m/s ==> var = (1.6/3)^2 m^2/s^2
-    INIT_VAR_ACC = 1.1111           # [paper: p_a] Hip: no keypoint accelerates faster than 10 m/s^2 ==> 3-sigma (99.5%) = 10 m/s^2 ==> var = (10/3)^2 m^2/s^4
+    INIT_VAR_VEL = (1.6/3.0)**2     # [paper: p_v] Hip: no keypoint moves faster than 1.6 m/s ==> 3-sigma (99.5%) = 1.6 m/s ==> var = (1.6/3)^2 m^2/s^2
+    INIT_VAR_ACC = (1.6/3.0)**2     # [paper: p_a] Hip: no keypoint accelerates faster than 10 m/s^2 ==> 3-sigma (99.5%) = 10 m/s^2 ==> var = (10/3)^2 m^2/s^4
 elif SPACE == 'joint':
     INIT_VAR_POS = 0.01 #TODO: to tune -> should be related to VAR_MEAS_KPT, but the link is the NONLINEAR inverse kinematics => not trivial, requires MonteCarlo?
                         # Moreover: which subject to use for the MonteCarlo? All subjects? Only the training subjects? The body parameters are different for each subject.
-    INIT_VAR_VEL = 0.01 #TODO: to tune
-    INIT_VAR_ACC = 0.01 #TODO: to tune
     INIT_VAR_PARAM = 0.1 #TODO: to tune
+    UNCERTAINTY_FACTOR = 10.0                        #TODO: check, arbitrary choice
+    INIT_VAR_VEL = UNCERTAINTY_FACTOR * INIT_VAR_POS #TODO: check, arbitrary choice
+    INIT_VAR_ACC = UNCERTAINTY_FACTOR * INIT_VAR_VEL #TODO: check, arbitrary choice
 else:
     ValueError("SPACE must be either 'cartesian' or 'joint'.")
 
 # Parameters for the IMM estimator
 USE_SINDY_MODEL = False
+
+assert SPACE == 'joint' if USE_SINDY_MODEL else True, \
+    "SPACE must be 'joint' if USE_SINDY_MODEL is True."
+
 NUM_FILTERS_IN_BANK = 3
 M = np.array([[0.55, 0.15, 0.30], # transition matrix for the IMM estimator
               [0.15, 0.75, 0.10],
@@ -213,6 +225,8 @@ elif SPACE == 'joint':
 else:
     raise ValueError("SPACE must be either 'cartesian' or 'joint'.")
 
+# Define the number of steps based on PRED_HORIZONS and DT
+num_pred_steps = [int(np.round(hor / DT)) for hor in PRED_HORIZONS]
 
 # Define the dimensionality of the state space for the filter
 if SPACE == 'cartesian':
@@ -289,10 +303,27 @@ if not LOADING_RESULTS:
             SELECTED_TASK_NAMES,
             selected_columns # measurement data
         )
+    
+
+    tic = time.time()
+    # Possibly perform tuning of the variance parameters
+    if SPACE == 'joint' and TUNE_INIT_VARIANCE_JOINTS:
+        print("\nTuning the initial variance using the IDENTIFICATION subjects...")
+        INIT_VAR_POS, INIT_VAR_PARAM = ukf_predictor.tune_init_variance_joints(
+            X_train_list, time_train_list, train_traj_idx,
+            DT, SELECTED_KPT_NAMES, SELECTED_KEYPOINTS_FOR_KINEMATIC_MODEL,
+            N_JOINTS, N_PARAM, NUM_MONTECARLO_SAMPLES, VAR_MEAS_KPT
+        )
+
+        INIT_VAR_VEL = UNCERTAINTY_FACTOR * INIT_VAR_POS #TODO: check, arbitrary choice
+        INIT_VAR_ACC = UNCERTAINTY_FACTOR * INIT_VAR_VEL #TODO: check, arbitrary choice
+
+        toc = time.time() - tic
+        minutes, seconds = divmod(toc, 60)
+        print(f"Variance parameters tuning took {minutes:.0f} minutes and {seconds:.2f} seconds.")
 
 
     print("\nInitialize the filter...")
-
     # Initialize the state covariance matrix
     if SPACE == 'cartesian':
         init_P = ukf_predictor.initialize_P(N_VAR_PER_KPT, N_DIM_PER_KPT, N_KPTS, INIT_VAR_POS, INIT_VAR_VEL, INIT_VAR_ACC)
@@ -304,10 +335,9 @@ if not LOADING_RESULTS:
 
 
     print("\nRun the filtering loop for all subjects, identification and validation...")
-
     tic = time.time()
 
-    # Initialize the SINDy model
+    # Possibly initialize the SINDy model
     sindy_model = None
     if USE_SINDY_MODEL:
         # Load SINDy model
@@ -323,10 +353,15 @@ if not LOADING_RESULTS:
         with open(os.path.join(models_dir, 'sindy_model_upper_body.pkl'), 'rb') as f:
             sindy_model['upper_body'] = dill.load(f)
 
+        toc = time.time() - tic
+        minutes, seconds = divmod(toc, 60)
+        print(f"SINDy initialization took {minutes:.0f} minutes and {seconds:.2f} seconds.")
+
+
     # Run the loop for the IDENTIFICATION subjects
     print("\nTraining dataset:")
     ukf_predictor.run_filtering_loop(
-        X_train_list, time_train_list, train_traj_idx, PRED_HORIZONS, PREDICT_K_STEPS,
+        X_train_list, time_train_list, train_traj_idx, num_pred_steps, PREDICT_K_STEPS,
         dim_x, dim_z, p_idx, DT,
         N_VAR_PER_KPT, N_DIM_PER_KPT, N_KPTS,
         init_P, VAR_MEAS_KPT, VAR_Q_ACC,
@@ -337,6 +372,8 @@ if not LOADING_RESULTS:
         output_dir,
         'train',
         space=SPACE,
+        n_joints=N_JOINTS,
+        n_params=N_PARAM,
         param_idx=param_idx,
         sindy_model=sindy_model
     )
@@ -344,7 +381,7 @@ if not LOADING_RESULTS:
     # Run the loop for the VALIDATION subjects
     print("\n\nTesting dataset:")
     ukf_predictor.run_filtering_loop(
-        X_test_list, time_test_list, test_traj_idx, PRED_HORIZONS, PREDICT_K_STEPS,
+        X_test_list, time_test_list, test_traj_idx, num_pred_steps, PREDICT_K_STEPS,
         dim_x, dim_z, p_idx, DT,
         N_VAR_PER_KPT, N_DIM_PER_KPT, N_KPTS,
         init_P, VAR_MEAS_KPT, VAR_Q_ACC,
@@ -355,6 +392,8 @@ if not LOADING_RESULTS:
         output_dir,
         'test',
         space=SPACE,
+        n_joints=N_JOINTS,
+        n_params=N_PARAM,
         param_idx=param_idx,
         sindy_model=sindy_model
     )
@@ -383,7 +422,7 @@ for file in pickle_files:
 conf_names = output_column_names['filtered_joint_column_names'] \
     if SPACE == 'joint' else output_column_names['filtered_column_names']
 
-for horizon in PRED_HORIZONS:
+for horizon in num_pred_steps:
     # Load the results for the IDENTIFICATION subjects
     for file in pickle_files:
         if f'train_filtering_results_{horizon}_steps' in file:

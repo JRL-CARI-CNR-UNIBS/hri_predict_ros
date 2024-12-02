@@ -21,26 +21,12 @@ N_VAR_PER_KPT = 3                               # position, velocity, accelerati
 N_DIM_PER_KPT = 3                               # x, y, z
 
 SELECTED_KEYPOINTS_FOR_KINEMATIC_MODEL = [0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]    # select which keypoints to consider for the kinematic model
-# SELECTED_KPT_NAMES = {
-#     0: "head",
-#     5: "left_shoulder",
-#     6: "left_elbow",
-#     7: "left_wrist",
-#     11: "left_hip",
-#     12: "left_knee",
-#     13: "left_ankle",
-#     2: "right_shoulder",
-#     3: "right_elbow",
-#     4: "right_wrist",
-#     8: "right_hip",
-#     9: "right_knee",
-#     10: "right_ankle"
-# }
 
-SAMPLING_TIME = 0.1 # seconds
-PREDICT_K_STEPS = True
-PREDICTION_STEPS = 5 # steps
 NUM_SIGMAS = 1 # number of standard deviations for the covariance cones
+PREDICT_K_STEPS = True
+SAMPLING_TIME = 0.1 # seconds
+PREDICTION_HORIZON = 0.5 # seconds
+prediction_steps = int(np.round(PREDICTION_HORIZON / SAMPLING_TIME))
 
 TRAINORTEST = 'train'
 
@@ -55,8 +41,8 @@ VELOCITIES = ['FAST']#['SLOW', 'FAST']
 TASKS = ['PICK-&-PLACE']#['PICK-&-PLACE', 'WALKING']
 SPACES_COMPUTE = ['cartesian']#['cartesian', 'joint']
 SPACES_EVAL = ['cartesian']#['cartesian', 'joint']
-SUBJECT = 'sub_4'
-INSTRUCTION = 1
+SUBJECT = 'sub_11'
+INSTRUCTION = 3
 
 # Get the current working directory
 cwd = os.getcwd()
@@ -101,7 +87,7 @@ for space_c in SPACES_COMPUTE:
 
                         # Load the filtering results
                         file = os.path.join(data_dir,
-                                            f'{TRAINORTEST}_filtering_results_{PREDICTION_STEPS}_steps_{space_c}_.pkl')
+                                            f'{TRAINORTEST}_filtering_results_{prediction_steps}_steps_{space_c}_.pkl')
                         
                         with open(file, 'rb') as f:
                             print(f"\nLoading file: {file}...")
@@ -109,7 +95,7 @@ for space_c in SPACES_COMPUTE:
 
                         # Load the prediction results
                         file = os.path.join(data_dir,
-                                            f'{TRAINORTEST}_prediction_results_{PREDICTION_STEPS}_steps_{space_c}_.pkl')
+                                            f'{TRAINORTEST}_prediction_results_{prediction_steps}_steps_{space_c}_.pkl')
                         
                         with open(file, 'rb') as f:
                             print(f"Loading file: {file}...")
@@ -121,7 +107,13 @@ for space_c in SPACES_COMPUTE:
                                 y_axes_lim = [0.12, 0.85]
                                 start_meas = 0.0
                                 end_meas = 10.0
-                                kpt = 4
+                                if INSTRUCTION == 1:
+                                    kpt = 4 # right wrist
+                                elif INSTRUCTION == 3:
+                                    kpt = 7 # left wrist
+                                else:
+                                    kpt = 4 # by default choose right wrist
+                                    raise ValueError('CHECK')
                                 dim = 'x'
                             elif task == 'WALKING':
                                 y_axes_lim = [-1.0, 1.5]
@@ -134,7 +126,13 @@ for space_c in SPACES_COMPUTE:
                                 y_axes_lim = [-0.3, 1.15]
                                 start_meas = 0.0
                                 end_meas = 10.0
-                                kpt = 4
+                                if INSTRUCTION == 1:
+                                    kpt = 4 # right wrist
+                                elif INSTRUCTION == 3:
+                                    kpt = 7 # left wrist
+                                else:
+                                    kpt = 4 # by default choose right wrist
+                                    raise ValueError('CHECK')
                                 dim = 'x'
                             elif task == 'WALKING':
                                 y_axes_lim = [-1, 1.25]
@@ -156,7 +154,7 @@ for space_c in SPACES_COMPUTE:
                     # Define a list of pd.Timedelta to uniformly sample the time range
                     selected_timestamps = [pd.Timedelta(seconds=round(s, 1))
                                            for s in np.arange(start_meas,
-                                                              end_meas-SAMPLING_TIME*PREDICTION_STEPS,
+                                                              end_meas-PREDICTION_HORIZON,
                                                               CONE_STEP)]
 
                     # Define the time range to plot the time series
@@ -169,6 +167,6 @@ for space_c in SPACES_COMPUTE:
 
                     plot_covariance_cone(measurements, filtering_results, prediction_results,
                                          SUBJECT, velocity, task, INSTRUCTION, kpt, kpt_idx, dim, DIM_TYPE,
-                                         dim_x, N_VAR_PER_KPT, N_DIM_PER_KPT, SAMPLING_TIME, PREDICTION_STEPS,
-                                         PREDICTION_STEPS, selected_timestamps, selected_range, filter_type, y_axes_lim,
+                                         dim_x, N_VAR_PER_KPT, N_DIM_PER_KPT, SAMPLING_TIME, PREDICT_K_STEPS,
+                                         prediction_steps, selected_timestamps, selected_range, filter_type, y_axes_lim,
                                          plot_dir, num_sigmas=NUM_SIGMAS)

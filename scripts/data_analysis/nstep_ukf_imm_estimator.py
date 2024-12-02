@@ -1,12 +1,17 @@
 import os, copy, torch, tqdm, time, pickle
+from multipledispatch import dispatch
 import numpy as np
 import pandas as pd
+
 import human_model_binding as hkm # human kinematic model
-from filterpy.kalman import UnscentedKalmanFilter, MerweScaledSigmaPoints, IMMEstimator, unscented_transform
+from filterpy.kalman import UnscentedKalmanFilter, MerweScaledSigmaPoints, IMMEstimator
 from filterpy.common import Q_discrete_white_noise
 from scipy.linalg import block_diag
-from multipledispatch import dispatch
 from utils import compute_state_indices
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy.stats import entropy
 
 pd.options.mode.chained_assignment = None  # default='warn'
 
@@ -114,7 +119,7 @@ def initialize_filters(dim_x, dim_z, p_idx, dt,
         @dispatch(np.ndarray, param=np.ndarray)
         def hx(x: np.ndarray, param: np.ndarray):
             kp_in_ext = hkm.Keypoints()
-            human_kinematic_model.forward_kinematics(x, param, kp_in_ext) # type: ignore (assertion already ensures that human_kinematic_model is not None)
+            human_kinematic_model.forward_kinematics(x[p_idx], param, kp_in_ext) # type: ignore (assertion already ensures that human_kinematic_model is not None)
             return kp_in_ext.get_keypoints()
     else:
         raise ValueError('Invalid space. Choose between "cartesian" or "joint".')
@@ -314,32 +319,39 @@ def propagate_covariance(dim_x, dim_z, ukf, body_model, p_idx, param_idx):
     if (np.isnan(ukf.x)).any() or (np.isnan(ukf.P)).any():
         return np.nan * np.ones(dim_z), np.nan * np.ones(dim_z * dim_z)
     
+    # Extract the position and parameter states and their covariance
+    q_pos = ukf.x[p_idx]
+    param = ukf.x[param_idx]
+    P_pos = ukf.P[np.ix_(p_idx, p_idx)]
+    P_param = ukf.P[np.ix_(param_idx, param_idx)]
+    q_pos_size = len(q_pos)
+    param_size = len(param)
+
+    state = np.concatenate((q_pos, param))
+    cov = np.block([
+        [P_pos, ukf.P[np.ix_(p_idx, param_idx)]],
+        [ukf.P[np.ix_(param_idx, p_idx)], P_param]
+    ])
+
     # Sigma points for the UKF
-    sigma_fn = MerweScaledSigmaPoints(n=dim_x, alpha=.1, beta=2., kappa=1.)
+    sigma_fn = MerweScaledSigmaPoints(n=q_pos_size+param_size, alpha=.1, beta=2., kappa=1.)
 
     # Calculate sigma points for given mean and covariance
-    sigmas = sigma_fn.sigma_points(ukf.x, ukf.P)
+    sigmas = sigma_fn.sigma_points(state, cov)
 
     sigmas_h = []
     kpts = hkm.Keypoints()
     for s in sigmas:
-        body_model.forward_kinematics(s[p_idx], s[param_idx], kpts)
+        # Normalize the quaternion
+        quat = s[3:7]
+        s[3:7] = quat / np.linalg.norm(quat)
+
+        body_model.forward_kinematics(s[:q_pos_size], s[q_pos_size:], kpts)
         sigmas_h.append(kpts.get_keypoints())
 
     sigmas_h = np.atleast_2d(sigmas_h)
 
-    # Mean and covariance of prediction passed through unscented transform
-    if isinstance(ukf, IMMEstimator):
-        # Select the first filter in the bank (arbitrary choice)
-        Wm = ukf.filters[0].Wm
-        Wc = ukf.filters[0].Wc
-        R = ukf.filters[0].R
-    else:
-        Wm = ukf.Wm
-        Wc = ukf.Wc
-        R = ukf.R
-
-    # kpts_mean, kpts_cov = unscented_transform(sigmas_h, Wm, Wc, R)
+    # Compute the mean and covariance of the propagated sigma points
     kpts_mean = np.mean(sigmas_h, axis=0)
     kpts_cov = np.cov(sigmas_h.T)
     
@@ -626,6 +638,8 @@ def run_filtering_loop(X_train_list, time_train_list, train_traj_idx,
                        results_dir,
                        filename,
                        space='cartesian',
+                       n_joints=28,
+                       n_params=8,
                        param_idx=np.array([]),
                        sindy_model=None):
     
@@ -656,14 +670,15 @@ def run_filtering_loop(X_train_list, time_train_list, train_traj_idx,
         for traj_idx in range(len(X_train_list)):
             traj_info = train_traj_idx[traj_idx]
             subject_id, velocity, task, instruction = traj_info['subject'], traj_info['velocity'], traj_info['task'], traj_info['instruction']
-            print(f'\n[ITER {hor_idx*len(X_train_list) + traj_idx + 1} / {len(X_train_list)*len(pred_horizons)}]: processing {traj_info} for {k} steps ahead...')
+            print(f'\n[ITER {hor_idx*len(X_train_list) + traj_idx + 1} / {len(X_train_list)*len(pred_horizons)}]: ',
+                  f'processing {traj_info} for {k} steps ahead (dt = {dt})...')
 
             # Create a HumanBodyModel object if the space is 'joint'
             if space == 'joint':
                 body_model = hkm.Human28DOF()
 
                 # Initialize joint limits
-                qbounds = [hkm.JointLimits(-np.pi, np.pi)]*28
+                qbounds = [hkm.JointLimits(-np.pi, np.pi)]*n_joints
 
                 # Set the shoulder rot y joint limits
                 qbounds[12] = hkm.JointLimits(-np.pi/2, np.pi/2) # right shoulder
@@ -782,8 +797,8 @@ def run_filtering_loop(X_train_list, time_train_list, train_traj_idx,
                         kp_in_ext.set_keypoints(kpts)
                         
                         # Update the HumanBodyModel with the current joint angles
-                        q = np.zeros(28)
-                        param = np.zeros(8)
+                        q = np.zeros(n_joints)
+                        param = np.zeros(n_params)
                         if body_model is not None:
                             q, param = body_model.inverse_kinematics(kp_in_ext, qbounds, q, param) 
 
@@ -881,6 +896,7 @@ def run_filtering_loop(X_train_list, time_train_list, train_traj_idx,
                                     for f in bank_pred.filters:
                                         f.P = get_near_psd(f.P)
 
+                                    # Open-loop prediction
                                     ca_ukf_pred.predict()
                                     bank_pred.predict()
 
@@ -893,9 +909,9 @@ def run_filtering_loop(X_train_list, time_train_list, train_traj_idx,
                                     if space == 'joint':
                                         # Propagate the covariance matrices from joint space to Cartesian space
                                         ca_ukf_pred_kpt, ca_ukf_pred_kpt_cov = \
-                                            propagate_covariance(dim_x, dim_z, ca_ukf, body_model, p_idx, param_idx)
+                                            propagate_covariance(dim_x, dim_z, ca_ukf_pred, body_model, p_idx, param_idx)
                                         bank_pred_kpt, bank_pred_kpt_cov = \
-                                            propagate_covariance(dim_x, dim_z, bank, body_model, p_idx, param_idx)
+                                            propagate_covariance(dim_x, dim_z, bank_pred, body_model, p_idx, param_idx)
                                         
                                         uxs_ca_kpt_pred[i].append(ca_ukf_pred_kpt)
                                         uxs_bank_kpt_pred[i].append(bank_pred_kpt)
@@ -1381,3 +1397,183 @@ def run_filtering_loop(X_train_list, time_train_list, train_traj_idx,
 
 #     return measurement_split, filtering_results, prediction_results
 ### =================================== ###
+
+
+def tune_init_variance_joints(X_train_list, time_train_list, train_traj_idx,
+                              dt, selected_kpt_names, selected_keypoints_for_kinematic_model,
+                              n_joints, n_params, num_mc_samples, kpt_variance):
+        
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    from scipy.stats import shapiro, entropy
+
+    # Define the column names for the measurements
+    measurements_column_names = ['kp{}_{}'.format(i, axis)
+                                for i in selected_keypoints_for_kinematic_model
+                                for axis in ['x', 'y', 'z']]
+
+    # Create dictionary to store results
+    measurement_split = {}   # dictionary of DataFrames with the measurements split by task
+
+    # Loop over the training trajectories
+    for traj_idx in range(len(X_train_list)):
+        traj_info = train_traj_idx[traj_idx]
+        subject_id, velocity, task, instruction = traj_info['subject'], traj_info['velocity'], traj_info['task'], traj_info['instruction']
+        print(f'\n[ITER {traj_idx + 1} / {len(X_train_list)}]: processing {traj_info}...')
+
+        # Create a HumanBodyModel object
+        body_model = hkm.Human28DOF()
+
+        # Initialize joint limits
+        qbounds = [hkm.JointLimits(-np.pi, np.pi)]*n_joints
+
+        # Set the shoulder rot y joint limits
+        qbounds[12] = hkm.JointLimits(-np.pi/2, np.pi/2) # right shoulder
+        qbounds[16] = hkm.JointLimits(-np.pi/2, np.pi/2) # left shoulder
+        qbounds[20] = hkm.JointLimits(-np.pi/2, np.pi/2) # right hip
+        qbounds[24] = hkm.JointLimits(-np.pi/2, np.pi/2) # left hip
+
+        # Initialize Keypoints object
+        kp_in_ext = hkm.Keypoints()
+
+        # Get the measurements
+        meas = X_train_list[traj_idx]
+        time_info = time_train_list[traj_idx]
+
+        zs = pd.DataFrame(meas, columns=measurements_column_names)
+        zs['timestamp'] = pd.to_timedelta(time_info, unit='s')
+        zs.set_index('timestamp', inplace=True)
+
+        measurement_split[(subject_id, velocity, task, instruction)] = zs
+
+        # If zs only contains NaN values, skip the current iteration
+        nan_idxs = zs.apply(lambda x: all(pd.isna(x)), axis=1)
+        if nan_idxs.all():
+            print(f"Skipping {subject_id} - {velocity} - {task}.")
+            continue
+
+        # Define times
+        t = zs.index[0]
+        t_end = zs.index[-1]
+        t_incr = pd.Timedelta(seconds=dt)
+
+        print("Start time:", t, " [s] | End time:", t_end, " [s]")
+
+        # Main loop
+        total_iterations = int((t_end - t) / t_incr) + 1
+        pbar = tqdm.tqdm(total=total_iterations)
+
+        start_time = time.time()
+        while t <= t_end:
+            # Get the current measurement
+            z = zs.loc[t].values
+
+            # Generate num_mc_samples random samples for each element of z following a normal distribution
+            # Mean: z, Standard deviation: sqrt(kpt_variance)
+            z_samples = np.random.normal(z, np.sqrt(kpt_variance), (num_mc_samples, len(z)))
+            z_samples_gaussian = np.random.normal(z, np.sqrt(kpt_variance), (num_mc_samples, len(z)))
+
+            q_samples = np.zeros((num_mc_samples, n_joints))
+            param_samples = np.zeros((num_mc_samples, n_params))
+            for i, sample in enumerate(z_samples):
+                # Update the Keypoints object with the current joint angles
+                kpts = {}
+                for key, value in selected_kpt_names.items():
+                    kpts[value] = sample[selected_keypoints_for_kinematic_model.index(key)*3 : \
+                                         selected_keypoints_for_kinematic_model.index(key)*3+3]
+
+                kp_in_ext.set_keypoints(kpts)
+                        
+                # Update the HumanBodyModel with the current joint angles
+                q = np.zeros(n_joints)
+                param = np.zeros(n_params)
+                q, param = body_model.inverse_kinematics(kp_in_ext, qbounds, q, param)
+
+                # Store the joint angles and parameters
+                q_samples[i] = q
+                param_samples[i] = param
+
+            q_mean = np.mean(q_samples, axis=0)
+            q_std = np.std(q_samples, axis=0)
+            q_samples_gaussian = np.random.normal(q_mean, q_std, (num_mc_samples, n_joints))
+
+            param_mean = np.mean(param_samples, axis=0)
+            param_std = np.std(param_samples, axis=0)
+            param_samples_gaussian = np.random.normal(param_mean, param_std, (num_mc_samples, n_params))
+
+            # Store z_samples, q_samples, and param_samples in a single DataFrame
+            z_samples_df = pd.DataFrame(z_samples, columns=measurements_column_names)
+            z_samples_gaussian_df = pd.DataFrame(z_samples_gaussian, columns=measurements_column_names)
+            q_samples_df = pd.DataFrame(q_samples, columns=[f'q_{i}' for i in range(n_joints)])
+            q_samples_gaussian_df = pd.DataFrame(q_samples_gaussian, columns=[f'q_{i}' for i in range(n_joints)])
+            param_samples_df = pd.DataFrame(param_samples, columns=[f'param_{i}' for i in range(n_params)])
+            param_samples_gaussian_df = pd.DataFrame(param_samples_gaussian, columns=[f'param_{i}' for i in range(n_params)])
+
+            # z_samples_df #
+            plot_kde_histograms(z_samples_df, z_samples_gaussian_df, measurements_column_names,
+                                subplot_rows=5, subplot_cols=8)
+
+            # q_samples_df #
+            plot_kde_histograms(q_samples_df, q_samples_gaussian_df, [f'q_{i}' for i in range(n_joints)],
+                                subplot_rows=4, subplot_cols=7)
+
+            # param_samples_df #
+            plot_kde_histograms(param_samples_df, param_samples_gaussian_df, [f'param_{i}' for i in range(n_params)],
+                                subplot_rows=2, subplot_cols=4)
+            
+            plt.show()
+        
+            t += t_incr                        
+            pbar.update()
+
+        pbar.close()
+        print(f"Average loop frequency: {(total_iterations / (time.time() - start_time)):.2f} Hz")
+
+    return 0, 1
+
+
+
+def plot_kde_histograms(data, data_ideal, column_names, subplot_rows, subplot_cols,
+                        figsize=(1.92, 1.08), bw_adjust=0.5, bins=30):
+    # Create a subplot grid
+    fig, axes = plt.subplots(subplot_rows, subplot_cols, figsize=figsize)
+    axes = axes.flatten()
+
+    for i, column in enumerate(column_names):
+        # Plot histogram of the samples and the KDE
+        sns.histplot(data=data, x=column, kde=False, ax=axes[i], bins=bins, stat="density", alpha=0.3)
+        
+        # Plot measured KDE
+        p_kde = sns.kdeplot(data=data, x=column, ax=axes[i], color='blue', linestyle='-')
+        p_pdf = p_kde.get_lines()[0].get_data()[1]
+
+        # Plot ideal KDE
+        q_kde = sns.kdeplot(data=data_ideal, x=column, ax=axes[i], color='red', linestyle='--')
+        q_pdf = q_kde.get_lines()[0].get_data()[1]
+
+        # Normalize the PDFs
+        p_pdf = p_pdf / np.sum(p_pdf)
+        q_pdf = q_pdf / np.sum(q_pdf)
+
+        # Compute KL divergence
+        kl_div = entropy(p_pdf, q_pdf)
+        
+        # Set plot title and remove x and y labels
+        axes[i].set_title(column)
+        axes[i].set_xlabel('')
+        axes[i].set_ylabel('')
+                
+        # Display the KL divergence in the top right corner of the plot
+        axes[i].text(0.95, 0.95, f'KL: {kl_div:.2f}',
+                     ha='right', va='top', transform=axes[i].transAxes)
+
+    # Hide any unused subplots
+    for j in range(i + 1, len(axes)):
+        fig.delaxes(axes[j])
+
+    # Add horizontal space between subplots
+    fig.subplots_adjust(hspace=1.0)
+
+    # Adjust layout
+    plt.tight_layout()
+    plt.draw()

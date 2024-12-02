@@ -13,7 +13,7 @@ DEFAULT_PLOTLY_COLORS=['rgb(31, 119, 180)', 'rgb(255, 127, 14)',
 alpha = 0.2
 DEFAULT_PLOTLY_COLORS_ALPHA = [color.replace('rgb', 'rgba').replace(')', f', {alpha})') for color in DEFAULT_PLOTLY_COLORS] # used for 5-step ahead prediction CI
 
-alpha = 0.3
+alpha = 0.1
 DEFAULT_PLOTLY_COLORS_ALPHA_HIGH = [color.replace('rgb', 'rgba').replace(')', f', {alpha})') for color in DEFAULT_PLOTLY_COLORS] # used for covariance cones
 
 
@@ -379,7 +379,7 @@ def plot_covariance_cone(measurements, filtering_results, prediction_results,
                             mode='lines',
                             name=f'Prediction at current time',
                             line=dict(color=DEFAULT_PLOTLY_COLORS[2],
-                                      width=3),
+                                      width=2),
                             showlegend=ca_cone_legend_not_plotted
             )
             ca_cone_legend_not_plotted = False
@@ -409,7 +409,7 @@ def plot_covariance_cone(measurements, filtering_results, prediction_results,
                             mode='lines',
                             name=f'Prediction at current time',
                             line=dict(color=DEFAULT_PLOTLY_COLORS[2],
-                                      width=3),
+                                      width=2),
                             showlegend=imm_cone_legend_not_plotted
             )
             imm_cone_legend_not_plotted = False
@@ -438,12 +438,6 @@ def plot_covariance_cone(measurements, filtering_results, prediction_results,
 
     # Plot k-step ahead predictions with their confidence intervals
     if predict_k_steps:
-        # if filter_type == 'CA':
-        #     # remove the element k-step ahead prediction at time t=0.4s for visualization purposes
-        #     kpred_cut.loc[pd.Timedelta(seconds=0.4), '_'.join(('ca', state))] = np.nan
-        #     kpred_cut.loc[pd.Timedelta(seconds=0.4), '_'.join(('ca', state, 'ucl'))] = np.nan
-        #     kpred_cut.loc[pd.Timedelta(seconds=0.4), '_'.join(('ca', state, 'lcl'))] = np.nan
-
         fig.add_scatter(x=kpred_seconds,
                         y=kpred_cut['_'.join((filter_type.lower(), state))],
                         mode='lines',
@@ -522,5 +516,5 @@ def plot_covariance_cone(measurements, filtering_results, prediction_results,
     plot_name = '_'.join([subject, velocity, task, state, "dt", str(dt),
                           "k", str(k), str(dim_type), "pred", str(predict_k_steps),
                           "cone", str(filter_type), "sigmas", str(num_sigmas)])
-    fig.write_html(os.path.join(plot_dir, plot_name+ '_PAPER.html')) # interactive plot
-    fig.write_image(os.path.join(plot_dir, plot_name+ '_PAPER.pdf')) # static plot
+    fig.write_html(os.path.join(plot_dir, plot_name+ '.html')) # interactive plot
+    fig.write_image(os.path.join(plot_dir, plot_name+ '.pdf')) # static plot
