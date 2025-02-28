@@ -518,3 +518,35 @@ def plot_covariance_cone(measurements, filtering_results, prediction_results,
                           "cone", str(filter_type), "sigmas", str(num_sigmas)])
     fig.write_html(os.path.join(plot_dir, plot_name+ '.html')) # interactive plot
     fig.write_image(os.path.join(plot_dir, plot_name+ '.pdf')) # static plot
+
+
+class IncrementalCovariance:
+    def __init__(self, n_features):
+        self.n_features = n_features
+        self.sumx = np.zeros(n_features)
+        self.sumx2 = np.zeros((n_features, n_features))
+        self.n_samples = 0
+
+    def update(self, x):
+        self.n_samples += 1
+        # If x has 1 dimension
+        if x.ndim == 1:
+            self.sumx += x
+            self.sumx2 += np.outer(x, x)
+        # If x has 2 dimensions
+        elif x.ndim == 2:
+            for i in range(x.shape[0]):
+                assert x[i].shape[0] == self.n_features, "The number of features in x does not match the expected number of features."
+                self.sumx += x[i]
+                self.sumx2 += np.outer(x[i], x[i])
+        else:
+            raise ValueError("x must have 1 or 2 dimensions.")
+
+    @property
+    def mean(self):
+        return self.sumx / self.n_samples
+
+    @property
+    def cov(self):
+        mean = self.mean
+        return (self.sumx2 - np.outer(mean, mean) * self.n_samples) / (self.n_samples - 1)

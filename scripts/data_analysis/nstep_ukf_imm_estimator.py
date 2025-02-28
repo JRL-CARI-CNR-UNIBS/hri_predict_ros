@@ -1,4 +1,4 @@
-import os, copy, torch, tqdm, time, pickle
+import os, copy, torch, tqdm, time, pickle, glob
 from multipledispatch import dispatch
 import numpy as np
 import pandas as pd
@@ -7,11 +7,11 @@ import human_model_binding as hkm # human kinematic model
 from filterpy.kalman import UnscentedKalmanFilter, MerweScaledSigmaPoints, IMMEstimator
 from filterpy.common import Q_discrete_white_noise
 from scipy.linalg import block_diag
-from utils import compute_state_indices
+from utils import compute_state_indices, IncrementalCovariance
 
 import matplotlib.pyplot as plt
 import seaborn as sns
-from scipy.stats import entropy
+from scipy.stats import gaussian_kde
 
 pd.options.mode.chained_assignment = None  # default='warn'
 
@@ -63,43 +63,67 @@ def get_near_psd(P, max_iter=10):
 # Initial covariance matrix for all keypoints
 def initialize_P(n_var_per_dof, n_dim_per_kpt, n_kpts, var_P_pos, var_P_vel, var_P_acc,
                  space='cartesian', var_P_param= None, n_param=None, n_joints=None):
-    if space == 'cartesian':
-        if n_var_per_dof == 1:
-            init_P = np.eye(n_dim_per_kpt * n_kpts) * var_P_pos
-        elif n_var_per_dof == 2:
-            init_P = np.diag([var_P_pos, var_P_vel]) # initial state covariance for the single keypoint
-            init_P = block_diag(*[init_P for _ in range(n_dim_per_kpt * n_kpts)])
-        elif n_var_per_dof == 3:
-            init_P = np.diag([var_P_pos, var_P_vel, var_P_acc]) # initial state covariance for the single keypoint
-            init_P = block_diag(*[init_P for _ in range(n_dim_per_kpt * n_kpts)])
-        else:
-            raise ValueError('Invalid n_var_per_dof')
     
-    elif space == 'joint'and var_P_param is not None and n_param is not None and n_joints is not None:
+    if n_var_per_dof == 1:
+        init_P = np.diag(var_P_pos)
 
-        if n_var_per_dof == 1:
-            init_P = np.eye(n_joints) * var_P_pos
-        elif n_var_per_dof == 2:
-            init_P = np.diag([var_P_pos, var_P_vel]) # initial state covariance for the single joint
-            init_P = block_diag(*[init_P for _ in range(n_joints)])
-        elif n_var_per_dof == 3:
-            init_P = np.diag([var_P_pos, var_P_vel, var_P_acc]) # initial state covariance for the single joint
-            init_P = block_diag(*[init_P for _ in range(n_joints)])
-        else:
-            raise ValueError('Invalid n_var_per_dof')
+    elif n_var_per_dof == 2:
+        diag_elements = np.vstack([var_P_pos, var_P_vel]).flatten('F')
+        init_P = np.diag(diag_elements)
 
-        param_P = np.eye(n_param) * var_P_param
+    elif n_var_per_dof == 3:
+        diag_elements = np.vstack([var_P_pos, var_P_vel, var_P_acc]).flatten('F')
+        init_P = np.diag(diag_elements)
+
+    else:
+        raise ValueError('Invalid n_var_per_dof')
+    
+    if space == 'joint' and var_P_param is not None and n_param is not None and n_joints is not None:
+        param_P = np.diag(var_P_param)
         init_P = np.block([
             [init_P, np.zeros((init_P.shape[0], n_param))],
             [np.zeros((n_param, init_P.shape[1])), param_P]
         ])
-
+    
     return init_P
+    
+    # if space == 'cartesian':
+    #     if n_var_per_dof == 1:
+    #         init_P = np.eye(n_dim_per_kpt * n_kpts) * var_P_pos
+    #     elif n_var_per_dof == 2:
+    #         init_P = np.diag([var_P_pos, var_P_vel]) # initial state covariance for the single keypoint
+    #         init_P = block_diag(*[init_P for _ in range(n_dim_per_kpt * n_kpts)])
+    #     elif n_var_per_dof == 3:
+    #         init_P = np.diag([var_P_pos, var_P_vel, var_P_acc]) # initial state covariance for the single keypoint
+    #         init_P = block_diag(*[init_P for _ in range(n_dim_per_kpt * n_kpts)])
+    #     else:
+    #         raise ValueError('Invalid n_var_per_dof')
+    
+    # elif space == 'joint'and var_P_param is not None and n_param is not None and n_joints is not None:
+
+    #     if n_var_per_dof == 1:
+    #         init_P = np.diag(var_P_pos)
+    #     elif n_var_per_dof == 2:
+    #         diag_elements = np.vstack([var_P_pos, var_P_vel]).flatten('F')
+    #         init_P = np.diag(diag_elements)
+    #     elif n_var_per_dof == 3:
+    #         diag_elements = np.vstack([var_P_pos, var_P_vel, var_P_acc]).flatten('F')
+    #         init_P = np.diag(diag_elements)
+    #     else:
+    #         raise ValueError('Invalid n_var_per_dof')
+
+    #     param_P = np.eye(n_param) * var_P_param
+    #     init_P = np.block([
+    #         [init_P, np.zeros((init_P.shape[0], n_param))],
+    #         [np.zeros((n_param, init_P.shape[1])), param_P]
+    #     ])
+
+    # return init_P
 
 
 def initialize_filters(dim_x, dim_z, p_idx, dt,
                        init_P, var_r, var_q,
-                       n_var_per_dof, n_dim_per_kpt, n_kpts,
+                       n_var_per_dof,
                        custom_inv, mu, M,
                        space='cartesian', human_kinematic_model=None,
                        param_idx=None,
@@ -147,17 +171,32 @@ def initialize_filters(dim_x, dim_z, p_idx, dt,
     ca_ukf.x = np.nan * np.ones(dim_x)
     ca_ukf.P = init_P
     ca_ukf.R = np.eye(dim_z)* var_r
-    ca_ukf.Q = Q_discrete_white_noise(dim=n_var_per_dof, dt=dt, var=var_q, block_size=len(p_idx))
-    if space == 'joint' and n_param is not None:
-        ca_ukf.Q = np.block([
-            [ca_ukf.Q, np.zeros((ca_ukf.Q.shape[0], n_param))],
-            [np.zeros((n_param, ca_ukf.Q.shape[1])), np.eye(n_param)*var_q]
-        ])
+
+    Qs = []
+    if space == 'cartesian':
+        for q in var_q:
+            Qs.append(Q_discrete_white_noise(dim=n_var_per_dof, dt=dt, var=q))
+    elif space == 'joint':
+        var_q_joints = var_q[:-n_param]
+        for q in var_q_joints:
+            Qs.append(Q_discrete_white_noise(dim=n_var_per_dof, dt=dt, var=q)) 
+        var_q_params = var_q[-n_param:]
+        Qs.append(np.diag(var_q_params))
+
+    ca_ukf.Q = block_diag(*Qs)
     ca_ukf.inv = custom_inv
+
+    # if space == 'joint' and n_param is not None:
+    #     ca_ukf.Q = np.block([
+    #         [ca_ukf.Q, np.zeros((ca_ukf.Q.shape[0], n_param))],
+    #         [np.zeros((n_param, ca_ukf.Q.shape[1])), np.eye(n_param)*var_q]
+    #     ])
+    
 
     # CONSTANT ACCELERATION UKF WITH NO PROCESS ERROR
     ca_no_ukf = copy.deepcopy(ca_ukf)
     ca_no_ukf.Q = np.zeros((dim_x, dim_x))
+
 
     # SINDY MODEL UKF
     if sindy_model is not None:
@@ -263,13 +302,8 @@ def initialize_filters(dim_x, dim_z, p_idx, dt,
         sindy_ukf = UnscentedKalmanFilter(dim_x=dim_x, dim_z=dim_z, dt=dt, hx=hx, fx=fx_sindy, points=sigmas)
         sindy_ukf.x = np.nan * np.ones(dim_x)
         sindy_ukf.P = init_P
-        sindy_ukf.R = np.eye(dim_z)* var_r
-        sindy_ukf.Q = Q_discrete_white_noise(dim=n_var_per_dof, dt=dt, var=var_q, block_size=len(p_idx))
-        if space == 'joint' and n_param is not None:
-            sindy_ukf.Q = np.block([
-                [sindy_ukf.Q, np.zeros((sindy_ukf.Q.shape[0], n_param))],
-                [np.zeros((n_param, sindy_ukf.Q.shape[1])), np.eye(n_param)*var_q]
-            ])
+        sindy_ukf.R = ca_ukf.R.copy()
+        sindy_ukf.Q = ca_ukf.Q.copy()
         sindy_ukf.inv = custom_inv
 
 
@@ -293,13 +327,8 @@ def initialize_filters(dim_x, dim_z, p_idx, dt,
     cv_ukf = UnscentedKalmanFilter(dim_x=dim_x, dim_z=dim_z, dt=dt, hx=hx, fx=fx_cv, points=sigmas)
     cv_ukf.x = np.nan * np.ones(dim_x)
     cv_ukf.P = init_P
-    cv_ukf.R = np.eye(dim_z)* var_r
-    cv_ukf.Q = Q_discrete_white_noise(dim=n_var_per_dof, dt=dt, var=var_q, block_size=len(p_idx))
-    if space == 'joint' and n_param is not None:
-        cv_ukf.Q = np.block([
-            [cv_ukf.Q, np.zeros((cv_ukf.Q.shape[0], n_param))],
-            [np.zeros((n_param, cv_ukf.Q.shape[1])), np.eye(n_param)*var_q]
-        ])
+    cv_ukf.R = ca_ukf.R.copy()
+    cv_ukf.Q = ca_ukf.Q.copy()
     cv_ukf.inv = custom_inv
 
     # IMM ESTIMATOR
@@ -484,7 +513,7 @@ def evaluate_metrics(subjects, velocities, tasks, instructions,
                      n_var_per_dof, n_dim_per_kpt, dim_x, k,
                      filtering_results, prediction_results, results_dir,
                      space_compute='cartesian', space_eval='cartesian',
-                     conf_names=[]):
+                     conf_names=[], filename_suffix=''):
     
     results = {}
 
@@ -558,7 +587,7 @@ def evaluate_metrics(subjects, velocities, tasks, instructions,
 
     # Compute the average values of these aggregated metrics
     for task in tasks:
-        print(f"Number of sums for {task}: {num_sums[task]}")
+        # print(f"Number of sums for {task}: {num_sums[task]}")
         if num_sums[task] == 0:
             avg_errors[k][task]['CA'] = np.nan
             avg_errors[k][task]['IMM'] = np.nan
@@ -622,8 +651,10 @@ def evaluate_metrics(subjects, velocities, tasks, instructions,
     }
     df_results = pd.DataFrame(results)
     df_results.set_index('Metric', inplace=True)      
-    df_results.to_csv(os.path.join(results_dir,f'results_{k}_steps_{space_compute}Compute_{space_eval}Eval.csv'))
+    df_results.to_csv(os.path.join(results_dir,f'results_{k}_steps_{space_compute}Compute_{space_eval}Eval{filename_suffix}.csv'))
     
+    return df_results
+
 
 def run_filtering_loop(X_train_list, time_train_list, train_traj_idx,
                        pred_horizons, predict_k_steps,
@@ -678,16 +709,16 @@ def run_filtering_loop(X_train_list, time_train_list, train_traj_idx,
                 body_model = hkm.Human28DOF()
 
                 # Initialize joint limits
-                qbounds = [hkm.JointLimits(-np.pi, np.pi)]*n_joints
-
-                # Set the shoulder rot y joint limits
-                qbounds[12] = hkm.JointLimits(-np.pi/2, np.pi/2) # right shoulder
-                qbounds[16] = hkm.JointLimits(-np.pi/2, np.pi/2) # left shoulder
-                qbounds[20] = hkm.JointLimits(-np.pi/2, np.pi/2) # right hip
-                qbounds[24] = hkm.JointLimits(-np.pi/2, np.pi/2) # left hip
+                qbounds = hkm.default_joint_limits()
 
                 # Initialize Keypoints object
                 kp_in_ext = hkm.Keypoints()
+
+                # Initialize configuration and parameters
+                q = np.zeros(n_joints)
+                q_prev = np.zeros(n_joints)
+                param = np.zeros(n_params)
+                chest_q_rotated = np.zeros(4)
 
             elif space == 'cartesian':
                 body_model = None
@@ -695,7 +726,7 @@ def run_filtering_loop(X_train_list, time_train_list, train_traj_idx,
             # Initialize the filters
             ca_ukf, cv_ukf, bank = initialize_filters(dim_x, dim_z, p_idx, dt,
                                                       init_P, var_r, var_q,
-                                                      n_var_per_dof, n_dim_per_kpt, n_kpts,
+                                                      n_var_per_dof,
                                                       custom_inv, mu, M,
                                                       space=space, human_kinematic_model=body_model,
                                                       param_idx=param_idx,
@@ -795,27 +826,42 @@ def run_filtering_loop(X_train_list, time_train_list, train_traj_idx,
                                             selected_keypoints_for_kinematic_model.index(key)*3+3]
 
                         kp_in_ext.set_keypoints(kpts)
-                        
+
+                        # print(f'Keypoints: {kpts}')
+
                         # Update the HumanBodyModel with the current joint angles
-                        q = np.zeros(n_joints)
-                        param = np.zeros(n_params)
                         if body_model is not None:
-                            q, param = body_model.inverse_kinematics(kp_in_ext, qbounds, q, param) 
+                            q, param, chest_q_rotated = \
+                                body_model.inverse_kinematics(kp_in_ext, qbounds, q_prev, q, param, chest_q_rotated) 
+                            
+                            # For any NaN value in q, set the previous value
+                            # This means that the IK is not valid and is done to avoid NaN values in the UKF
+                            q[np.isnan(q)] = q_prev[np.isnan(q)]
+                            
+                            q_prev = q.copy()
+
+                            # Compose z_joints as q, but replacing q[3:7] with chest_q_rotated
+                            z_joints = np.concatenate((q[:3], chest_q_rotated, q[7:]))
+
+                            # print(f'q: {q}')
+                            # print(f'param: {param}')
+                            # print(f'chest_q_rotated: {chest_q_rotated}')
+                            # print(f'z_joints: {z_joints}')
 
                 if measure_received and not ukf_initialized:
                     # print(f'[timestamp: {t.total_seconds():.2f}s] Initializing filters with the first measurement.')
                     # initial state: [pos, vel, acc] = [current measured position, 0.0, 0.0]
                     ca_ukf.x = np.zeros(dim_x)
-                    ca_ukf.x[p_idx] = (z if space == 'cartesian' else q)
+                    ca_ukf.x[p_idx] = (z if space == 'cartesian' else z_joints)
 
                     cv_ukf.x = np.zeros(dim_x)
-                    cv_ukf.x[p_idx] = (z if space == 'cartesian' else q)
+                    cv_ukf.x[p_idx] = (z if space == 'cartesian' else z_joints)
 
                     bank.x = np.zeros(dim_x)
-                    bank.x[p_idx] = (z if space == 'cartesian' else q)
+                    bank.x[p_idx] = (z if space == 'cartesian' else z_joints)
                     for f in bank.filters:
                         f.x = np.zeros(dim_x)
-                        f.x[p_idx] = (z if space == 'cartesian' else q)
+                        f.x[p_idx] = (z if space == 'cartesian' else z_joints)
                         if space == 'joint':
                             f.x[param_idx] = param
 
@@ -1124,317 +1170,43 @@ def run_filtering_loop(X_train_list, time_train_list, train_traj_idx,
         print(f"Results for {k} steps ahead saved and memory freed up. Time elapsed: {toc-tic:.2f} seconds.")
 
 
-### ===== OLD VERSION OF run_filtering_loop ===== ###
-# def run_filtering_loop(trigger_data, measurement_data,
-#                        subject_ids, velocities, task_names, pred_horizons, predict_k_steps,
-#                        dim_x, dim_z, p_idx, dt,
-#                        n_var_per_dof, n_dim_per_kpt, n_kpts,
-#                        init_P, var_r, var_q,
-#                        mu, M, num_filters_in_bank,
-#                        custom_inv, max_time_no_meas,
-#                        filtered_column_names, filtered_pred_column_names, col_names_prob_imm):
-
-#     # Create dictionary to store results
-#     measurement_split = {}   # dictionary of DataFrames with the measurements split by task
-#     filtering_results = {}   # dictionary of dictionaries with the filtering results
-#     prediction_results = {}  # dictionary of dictionaries with the k-step ahead prediction results
-
-#     for k in pred_horizons:
-#         for subject_id in subject_ids:
-#             for velocity in velocities:
-#                 for task in task_names:
-#                     print(f'Processing {subject_id} - {velocity} - {task} for {k} steps ahead...')
-
-#                     # Initialize the filters
-#                     ca_ukf, cv_ukf, bank = initialize_filters(dim_x, dim_z, p_idx, dt,
-#                                                               init_P, var_r, var_q,
-#                                                               n_var_per_dof, n_dim_per_kpt, n_kpts,
-#                                                               custom_inv, mu, M)
-#                     ca_ukf_pred = copy.deepcopy(ca_ukf)
-#                     bank_pred = copy.deepcopy(bank)
-
-#                     # K-STEP AHEAD PREDICTION FILTERS (declare k dictionaries to store the time series of predicted states and covariances)
-#                     ca_ukf_pred = copy.deepcopy(ca_ukf)
-#                     uxs_ca_pred = {}
-#                     uxs_ca_pred_cov = {}
-#                     bank_pred = copy.deepcopy(bank)
-#                     uxs_bank_pred = {}
-#                     uxs_bank_pred_cov = {}
-#                     probs_bank_pred = {}
-
-#                     # Reinitialize the lists to -> np.ndarray:
-#                     print("Selecting measurements from: ", start_trigger, "to", end_trigger)
-
-#                     zs = measurement_data[subject_id].loc[(measurement_data[subject_id]['timestamp'] >= start_trigger) &
-#                                                         (measurement_data[subject_id]['timestamp'] <= end_trigger)]
-#                     #zs.set_index('timestamp', inplace=True)
-
-#                     # Resample the measurements to a known frequency and subtract initial time
-#                     # zs = zs.resample(freq_str).mean()
-#                     #zs.index = zs.index - zs.index[0]
-#                     zs.loc[:, "timestamp"] = zs["timestamp"] - zs["timestamp"].iloc[0]
-                    
-#                     measurement_split[(k, subject_id, velocity, task)] = zs
-
-#                     # Define times
-#                     t = zs["timestamp"].iloc[0]
-#                     t_end = zs["timestamp"].iloc[-1]
-#                     t_incr = pd.Timedelta(seconds=dt)
-
-#                     print("Start time:", t, "End time:", t_end)
-
-#                     # Initialization flag
-#                     time_no_meas = pd.Timedelta(seconds=0)
-#                     ukf_initialized = False
-#                     filt_timestamps = []
-                    
-#                     # Main loop
-#                     total_iterations = int((t_end - t) / t_incr) + 1
-#                     pbar = tqdm.tqdm(total=total_iterations)
-
-#                     # Create dictionaries to store the k-step ahead prediction results
-#                     if predict_k_steps:
-#                         for i in range(k):
-#                             uxs_ca_pred[i] = []
-#                             uxs_bank_pred[i] = []
-#                             probs_bank_pred[i] = []
-#                             uxs_ca_pred_cov[i] = []
-#                             uxs_bank_pred_cov[i] = []
-
-#                     start_time = time.time()
-#                     while t <= t_end:
-#                         filt_timestamps.append(t)
-#                         k_step_pred_executed = False
-
-#                         # Get the measurements in the current time window
-#                         tmp_db =zs.loc[(zs["timestamp"]>=t) & (zs["timestamp"]<=t+t_incr)]
-#                         measure_received = False
-#                         if (tmp_db.shape[0] > 0):
-#                             z = np.double(np.array(tmp_db.iloc[-1][1:])) # Select the last measurement in the time window
-#                             measure_received = not np.isnan(z).any() # Consider the measurement only if it is not NaN
-                            
-#                         if measure_received and not ukf_initialized:
-#                             # print(f'[timestamp: {t.total_seconds():.2f}s] Initializing filters with the first measurement.')
-#                             # initial state: [pos, vel, acc] = [current measured position, 0.0, 0.0]
-#                             ca_ukf.x = np.zeros(dim_x)
-#                             ca_ukf.x[p_idx] = z
-#                             cv_ukf.x = np.zeros(dim_x)
-#                             cv_ukf.x[p_idx] = z
-#                             for f in bank.filters:
-#                                 f.x = np.zeros(dim_x)
-#                                 f.x[p_idx] = z
-#                             ukf_initialized = True
-
-#                         else:
-#                             if not measure_received and ukf_initialized:
-#                                 time_no_meas += t_incr
-#                                 # print(f'[timestamp: {t.total_seconds():.2f}s] No measure received for {time_no_meas.total_seconds():.2f} seconds.')
-
-#                             if time_no_meas >= max_time_no_meas or not ukf_initialized:
-#                                 if ukf_initialized:
-#                                     # print(f'[timestamp: {t.total_seconds():.2f}s] No-measure-received timeout. Resetting filters.')
-#                                     ukf_initialized = False
-#                                 # else:
-#                                     # print(f'[timestamp: {t.total_seconds():.2f}s] No measure received and filters not initialized.')
-
-#                                 # Reset filter states
-#                                 ca_ukf.x = np.nan * np.ones(dim_x)
-#                                 cv_ukf.x = np.nan * np.ones(dim_x)
-#                                 bank.x = np.nan * np.ones(dim_x)
-#                                 if predict_k_steps:
-#                                     ca_ukf_pred.x = np.nan * np.ones(dim_x)
-#                                     bank_pred.x = np.nan * np.ones(dim_x)
-
-#                                 # Reset filter covariances
-#                                 ca_ukf.P = init_P
-#                                 cv_ukf.P = init_P
-#                                 bank.P = init_P
-#                                 if predict_k_steps:
-#                                     ca_ukf_pred.P = init_P
-#                                     bank_pred.P = init_P
-                                
-#                             if ukf_initialized:
-#                                 try:
-#                                     # print(f'[timestamp: {t.total_seconds():.2f}s] Filtering and k-step-ahead prediction.')
-
-#                                     # make sure covariance matrices are positive semidefinite
-#                                     ca_ukf.P = get_near_psd(ca_ukf.P)
-#                                     cv_ukf.P = get_near_psd(cv_ukf.P)
-#                                     for f in bank.filters:
-#                                         f.P = get_near_psd(f.P)
-                                    
-#                                     ca_ukf.predict()
-#                                     cv_ukf.predict()
-#                                     bank.predict()
-
-#                                     if measure_received:
-#                                         time_no_meas = pd.Timedelta(seconds=0)
-#                                         ca_ukf.update(z)
-#                                         cv_ukf.update(z)
-#                                         bank.update(z)
-
-#                                     if predict_k_steps:
-#                                         # Predict k steps ahead starting from the current state and covariance
-#                                         ca_ukf_pred.x = ca_ukf.x.copy()
-#                                         ca_ukf_pred.P = ca_ukf.P.copy()
-#                                         bank_pred.x = bank.x.copy()
-#                                         for f_pred, f in zip(bank_pred.filters, bank.filters):
-#                                             f_pred.x = f.x.copy()
-#                                             f_pred.P = f.P.copy()
-                                            
-#                                         for i in range(k):
-#                                             # make sure covariance matrices are positive semidefinite
-#                                             ca_ukf_pred.P = get_near_psd(ca_ukf_pred.P)
-#                                             for f in bank_pred.filters:
-#                                                 f.P = get_near_psd(f.P)
-
-#                                             ca_ukf_pred.predict()
-#                                             bank_pred.predict()
-
-#                                             uxs_ca_pred[i].append(ca_ukf_pred.x.copy())
-#                                             uxs_bank_pred[i].append(bank_pred.x.copy())
-#                                             probs_bank_pred[i].append(bank_pred.mu.copy())
-#                                             uxs_ca_pred_cov[i].append(ca_ukf_pred.P.copy().flatten())
-#                                             uxs_bank_pred_cov[i].append(bank_pred.P.copy().flatten())
-
-#                                         k_step_pred_executed = True
-
-#                                 except np.linalg.LinAlgError as e:
-#                                     print(f"LinAlgError: {e}")
-
-#                                     # Reset filters
-#                                     ukf_initialized = False
-                                        
-#                                     # Reset filter states
-#                                     ca_ukf.x = np.nan * np.ones(dim_x)
-#                                     cv_ukf.x = np.nan * np.ones(dim_x)
-#                                     bank.x = np.nan * np.ones(dim_x)
-#                                     if predict_k_steps:
-#                                         ca_ukf_pred.x = np.nan * np.ones(dim_x)
-#                                         bank_pred.x = np.nan * np.ones(dim_x)
-#                                         bank_pred.mu = np.nan * np.ones(num_filters_in_bank) # IMM probabilities (3 filters)
-
-#                                     # Reset filter covariances
-#                                     ca_ukf.P = init_P
-#                                     cv_ukf.P = init_P
-#                                     bank.P = init_P
-#                                     if predict_k_steps:
-#                                         ca_ukf_pred.P = init_P
-#                                         bank_pred.P = init_P
-
-#                             else:
-#                                 total_iterations -= 1 # do not count the iteration if the filters are not initialized
-                                
-#                         uxs_ca.append(ca_ukf.x.copy())
-#                         uxs_cv.append(cv_ukf.x.copy())
-#                         uxs_bank.append(bank.x.copy())
-#                         probs_bank.append(bank.mu.copy())
-#                         uxs_ca_cov.append(ca_ukf.P.copy().flatten())
-#                         uxs_bank_cov.append(bank.P.copy().flatten())
-
-#                         if not k_step_pred_executed:
-#                             for i in range(k):
-#                                 uxs_ca_pred[i].append(ca_ukf.x.copy())
-#                                 uxs_bank_pred[i].append(bank.x.copy())
-#                                 probs_bank_pred[i].append(bank.mu.copy())
-#                                 uxs_ca_pred_cov[i].append(ca_ukf.P.copy().flatten())
-#                                 uxs_bank_pred_cov[i].append(bank.P.copy().flatten())
-
-#                         t += t_incr                        
-#                         pbar.update()
-
-#                     pbar.close()
-#                     print(f"Average loop frequency: {(total_iterations / (time.time() - start_time)):.2f} Hz")
-
-#                     # Create DataFrames with the filtered data
-#                     uxs_ca = np.array(uxs_ca)
-#                     uxs_cv = np.array(uxs_cv)
-#                     uxs_bank = np.array(uxs_bank)
-#                     uxs = np.concatenate((uxs_ca, uxs_cv, uxs_bank), axis=1)
-#                     probs_bank = np.array(probs_bank)
-#                     uxs_ca_cov = np.array(uxs_ca_cov)
-#                     uxs_bank_cov = np.array(uxs_bank_cov)
-#                     uxs_cov = np.concatenate((uxs_ca_cov, uxs_bank_cov), axis=1)
-
-#                     filtered_data = pd.DataFrame(uxs, index=filt_timestamps, columns=filtered_column_names)
-#                     imm_probs = pd.DataFrame(probs_bank, index=filt_timestamps, columns=col_names_prob_imm)
-#                     filtered_data_cov = pd.DataFrame(uxs_cov, index=filt_timestamps) # the elements of the flattened covariance matrices are stored in separate anonymous columns
-
-#                     if predict_k_steps:
-#                         kstep_pred_data = {}
-#                         kstep_pred_imm_probs = {}
-#                         kstep_pred_cov = {}
-
-#                         for i in range(k):
-#                             uxs_pred = np.concatenate((np.array(uxs_ca_pred[i]), np.array(uxs_bank_pred[i])), axis=1)
-#                             uxs_pred_cov = np.concatenate((np.array(uxs_ca_pred_cov[i]), np.array(uxs_bank_pred_cov[i])), axis=1)
-
-#                             kstep_pred_data[i] = pd.DataFrame(uxs_pred, index=filt_timestamps, columns=filtered_pred_column_names)
-#                             kstep_pred_imm_probs[i] = pd.DataFrame(np.array(probs_bank_pred[i]), index=filt_timestamps, columns=col_names_prob_imm)
-#                             kstep_pred_cov[i] = pd.DataFrame(uxs_pred_cov, index=filt_timestamps) # the elements of the flattened covariance matrices are stored in separate anonymous columns
-
-#                             # Shift the i-step ahead prediction data by i steps
-#                             kstep_pred_data[i] = kstep_pred_data[i].shift(+i)
-#                             kstep_pred_imm_probs[i] = kstep_pred_imm_probs[i].shift(+i)
-#                             kstep_pred_cov[i] = kstep_pred_cov[i].shift(+i)  
-
-#                     # Store filtering results
-#                     filtering_results[(k, subject_id, velocity, task)] = {
-#                         'filtered_data': filtered_data,
-#                         'imm_probs': imm_probs,
-#                         'filtered_data_cov': filtered_data_cov
-#                     }
-
-#                     # Store k-step prediction results
-#                     if predict_k_steps: 
-#                         prediction_results[(k, subject_id, velocity, task)] = {
-#                             'kstep_pred_data': kstep_pred_data,
-#                             'kstep_pred_imm_probs': kstep_pred_imm_probs,
-#                             'kstep_pred_cov': kstep_pred_cov
-#                         }
-
-#                     print(f"Processed {subject_id} - {velocity} - {task} for {k} steps ahead.\n\n")
-
-#     return measurement_split, filtering_results, prediction_results
-### =================================== ###
-
-
 def tune_init_variance_joints(X_train_list, time_train_list, train_traj_idx,
                               dt, selected_kpt_names, selected_keypoints_for_kinematic_model,
-                              n_joints, n_params, num_mc_samples, kpt_variance):
-        
-    import matplotlib.pyplot as plt
-    import seaborn as sns
-    from scipy.stats import shapiro, entropy
-
+                              n_joints, n_params, num_mc_samples, kpt_variance, tuning_dir,
+                              plot_distributions=False):  
+    
     # Define the column names for the measurements
     measurements_column_names = ['kp{}_{}'.format(i, axis)
                                 for i in selected_keypoints_for_kinematic_model
                                 for axis in ['x', 'y', 'z']]
+    
+    # Configuration and param column names
+    config_column_names = [f'q_{i}' for i in range(n_joints)]
+    param_column_names = [f'param_{i}' for i in range(n_params)]
 
-    # Create dictionary to store results
-    measurement_split = {}   # dictionary of DataFrames with the measurements split by task
+    # Create a HumanBodyModel object
+    body_model = hkm.Human28DOF()
 
+    # Initialize joint limits
+    qbounds = body_model.default_joint_limits()
+
+    # Initialize Keypoints object
+    kp_in_ext = hkm.Keypoints()
+
+    # Initialize the lists to store the samples
+    delta_q_samples = np.zeros((0, n_joints))
+    delta_param_samples = np.zeros((0, n_params))
+
+    # Initialize the incremental covariance objects
+    cov_q = IncrementalCovariance(n_joints)
+    cov_param = IncrementalCovariance(n_params)
+    
     # Loop over the training trajectories
-    for traj_idx in range(len(X_train_list)):
+    num_trajectories = len(X_train_list)
+    for traj_idx in range(num_trajectories):
         traj_info = train_traj_idx[traj_idx]
         subject_id, velocity, task, instruction = traj_info['subject'], traj_info['velocity'], traj_info['task'], traj_info['instruction']
-        print(f'\n[ITER {traj_idx + 1} / {len(X_train_list)}]: processing {traj_info}...')
-
-        # Create a HumanBodyModel object
-        body_model = hkm.Human28DOF()
-
-        # Initialize joint limits
-        qbounds = [hkm.JointLimits(-np.pi, np.pi)]*n_joints
-
-        # Set the shoulder rot y joint limits
-        qbounds[12] = hkm.JointLimits(-np.pi/2, np.pi/2) # right shoulder
-        qbounds[16] = hkm.JointLimits(-np.pi/2, np.pi/2) # left shoulder
-        qbounds[20] = hkm.JointLimits(-np.pi/2, np.pi/2) # right hip
-        qbounds[24] = hkm.JointLimits(-np.pi/2, np.pi/2) # left hip
-
-        # Initialize Keypoints object
-        kp_in_ext = hkm.Keypoints()
+        print(f'\n[ITER {traj_idx + 1} / {num_trajectories}]: processing {traj_info}...')
 
         # Get the measurements
         meas = X_train_list[traj_idx]
@@ -1443,8 +1215,6 @@ def tune_init_variance_joints(X_train_list, time_train_list, train_traj_idx,
         zs = pd.DataFrame(meas, columns=measurements_column_names)
         zs['timestamp'] = pd.to_timedelta(time_info, unit='s')
         zs.set_index('timestamp', inplace=True)
-
-        measurement_split[(subject_id, velocity, task, instruction)] = zs
 
         # If zs only contains NaN values, skip the current iteration
         nan_idxs = zs.apply(lambda x: all(pd.isna(x)), axis=1)
@@ -1460,10 +1230,14 @@ def tune_init_variance_joints(X_train_list, time_train_list, train_traj_idx,
         print("Start time:", t, " [s] | End time:", t_end, " [s]")
 
         # Main loop
-        total_iterations = int((t_end - t) / t_incr) + 1
-        pbar = tqdm.tqdm(total=total_iterations)
+        num_timesteps = int((t_end - t) / t_incr) + 1
+        pbar = tqdm.tqdm(total=num_timesteps)
+
+        # Initialize the previous joint angles
+        q_prev = np.zeros(n_joints)
 
         start_time = time.time()
+        plot_iteration = 0
         while t <= t_end:
             # Get the current measurement
             z = zs.loc[t].values
@@ -1471,101 +1245,174 @@ def tune_init_variance_joints(X_train_list, time_train_list, train_traj_idx,
             # Generate num_mc_samples random samples for each element of z following a normal distribution
             # Mean: z, Standard deviation: sqrt(kpt_variance)
             z_samples = np.random.normal(z, np.sqrt(kpt_variance), (num_mc_samples, len(z)))
-            z_samples_gaussian = np.random.normal(z, np.sqrt(kpt_variance), (num_mc_samples, len(z)))
 
-            q_samples = np.zeros((num_mc_samples, n_joints))
-            param_samples = np.zeros((num_mc_samples, n_params))
+            #q_samples = np.zeros((num_mc_samples, n_joints))
+            #param_samples = np.zeros((num_mc_samples, n_params))
+            q_samples = np.zeros((0, n_joints))
+            param_samples = np.zeros((0, n_params))
+            
             for i, sample in enumerate(z_samples):
                 # Update the Keypoints object with the current joint angles
                 kpts = {}
                 for key, value in selected_kpt_names.items():
-                    kpts[value] = sample[selected_keypoints_for_kinematic_model.index(key)*3 : \
-                                         selected_keypoints_for_kinematic_model.index(key)*3+3]
+                    if value == 'head':
+                        left_ear_idx = selected_keypoints_for_kinematic_model.index(16)
+                        right_ear_idx = selected_keypoints_for_kinematic_model.index(17)
+                        head_center = (sample[left_ear_idx*3:left_ear_idx*3+3] + sample[right_ear_idx*3:right_ear_idx*3+3]) / 2
+                        kpts[value] = head_center
+                                                
+                    else:
+                        kpts[value] = sample[selected_keypoints_for_kinematic_model.index(key)*3 : \
+                                             selected_keypoints_for_kinematic_model.index(key)*3+3]
 
                 kp_in_ext.set_keypoints(kpts)
                         
                 # Update the HumanBodyModel with the current joint angles
                 q = np.zeros(n_joints)
                 param = np.zeros(n_params)
-                q, param = body_model.inverse_kinematics(kp_in_ext, qbounds, q, param)
+                chest_q_rotated = np.zeros(4)
+                q, param, chest_q_rotated = body_model.inverse_kinematics(kp_in_ext, qbounds, q_prev, q, param, chest_q_rotated)
 
-                # Store the joint angles and parameters
-                q_samples[i] = q
-                param_samples[i] = param
+                # Replace the q values correponding to the chest with the rotated quaternion
+                q[3:7] = chest_q_rotated
 
+                # Store the joint angles and parameters if they are not nan
+                if (not np.isnan(q).any()) and (not np.isnan(param).any()):
+                    q_samples = np.vstack((q_samples, q))
+                    param_samples = np.vstack((param_samples, param))
+                    
+                    # Update the incremental covariance objects
+                    cov_q.update(q)
+                    cov_param.update(param)
+
+            # Compute the mean of the samples
             q_mean = np.mean(q_samples, axis=0)
-            q_std = np.std(q_samples, axis=0)
-            q_samples_gaussian = np.random.normal(q_mean, q_std, (num_mc_samples, n_joints))
-
             param_mean = np.mean(param_samples, axis=0)
-            param_std = np.std(param_samples, axis=0)
-            param_samples_gaussian = np.random.normal(param_mean, param_std, (num_mc_samples, n_params))
 
-            # Store z_samples, q_samples, and param_samples in a single DataFrame
-            z_samples_df = pd.DataFrame(z_samples, columns=measurements_column_names)
-            z_samples_gaussian_df = pd.DataFrame(z_samples_gaussian, columns=measurements_column_names)
-            q_samples_df = pd.DataFrame(q_samples, columns=[f'q_{i}' for i in range(n_joints)])
-            q_samples_gaussian_df = pd.DataFrame(q_samples_gaussian, columns=[f'q_{i}' for i in range(n_joints)])
-            param_samples_df = pd.DataFrame(param_samples, columns=[f'param_{i}' for i in range(n_params)])
-            param_samples_gaussian_df = pd.DataFrame(param_samples_gaussian, columns=[f'param_{i}' for i in range(n_params)])
+            # Compute the difference between the samples and the mean
+            delta_q = q_samples - q_mean
+            delta_q_samples = np.vstack((delta_q_samples, delta_q))
 
-            # z_samples_df #
-            plot_kde_histograms(z_samples_df, z_samples_gaussian_df, measurements_column_names,
-                                subplot_rows=5, subplot_cols=8)
+            delta_param = param_samples - param_mean
+            delta_param_samples = np.vstack((delta_param_samples, delta_param))
 
-            # q_samples_df #
-            plot_kde_histograms(q_samples_df, q_samples_gaussian_df, [f'q_{i}' for i in range(n_joints)],
-                                subplot_rows=4, subplot_cols=7)
+            ### PLOTTING TO CHECK THE DISTRIBUTIONS ###
+            if plot_distributions and (plot_iteration % 10 == 9):
+                # Compute the standard deviation of the samples
+                q_std = np.std(q_samples, axis=0)
+                param_std = np.std(param_samples, axis=0)
 
-            # param_samples_df #
-            plot_kde_histograms(param_samples_df, param_samples_gaussian_df, [f'param_{i}' for i in range(n_params)],
-                                subplot_rows=2, subplot_cols=4)
+                # Generate ideal gaussian distributions used to approximate the measured distributions
+                z_samples_gaussian = np.random.normal(z, np.sqrt(kpt_variance), (num_mc_samples, len(z)))
+                q_samples_gaussian = np.random.normal(q_mean, q_std, (num_mc_samples, n_joints))
+                param_samples_gaussian = np.random.normal(param_mean, param_std, (num_mc_samples, n_params))
+                
+                # Store z_samples, q_samples, and param_samples in a single DataFrame
+                z_samples_df = pd.DataFrame(z_samples, columns=measurements_column_names)
+                z_samples_gaussian_df = pd.DataFrame(z_samples_gaussian, columns=measurements_column_names)
+                q_samples_df = pd.DataFrame(q_samples, columns=config_column_names)
+                q_samples_gaussian_df = pd.DataFrame(q_samples_gaussian, columns=config_column_names)
+                param_samples_df = pd.DataFrame(param_samples, columns=param_column_names)
+                param_samples_gaussian_df = pd.DataFrame(param_samples_gaussian, columns=param_column_names)
+
+                # z_samples_df #
+                plot_kde_histograms(z_samples_df, z_samples_gaussian_df, measurements_column_names,
+                                    subplot_rows=int(np.ceil(len(measurements_column_names)/8)), subplot_cols=8)
+
+                # q_samples_df #
+                plot_kde_histograms(q_samples_df, q_samples_gaussian_df, config_column_names,
+                                    subplot_rows=4, subplot_cols=7)
+
+                # param_samples_df #
+                plot_kde_histograms(param_samples_df, param_samples_gaussian_df, param_column_names,
+                                    subplot_rows=2, subplot_cols=4)
+                
+                plt.show()
             
-            plt.show()
-        
-            t += t_incr                        
+            plot_iteration += 1
+            ###########################################
+       
+            t += t_incr  
+
+            # Store the previous joint angles
+            q_prev = q_mean.copy()
+                                  
             pbar.update()
 
         pbar.close()
-        print(f"Average loop frequency: {(total_iterations / (time.time() - start_time)):.2f} Hz")
+        print(f"Average loop frequency: {(num_timesteps / (time.time() - start_time)):.2f} Hz")
 
-    return 0, 1
 
+    # Compute the standard deviation of the delta samples (divide by N-1)
+    delta_q_std = np.std(delta_q_samples, axis=0, ddof=1)
+    delta_param_std = np.std(delta_param_samples, axis=0, ddof=1)
+    
+    # Generate ideal gaussian distributions used to approximate the measured distributions
+    delta_q_samples_gaussian = np.random.normal(0*q_mean, delta_q_std, (delta_q_samples.shape[0], n_joints))
+    delta_q_param_samples_gaussian = np.random.normal(0*param_mean, delta_param_std, (delta_q_samples.shape[0], n_params))
+    
+    # Store z_samples, q_samples, and param_samples in a single DataFrame
+    q_samples_df = pd.DataFrame(delta_q_samples, columns=config_column_names)
+    q_samples_gaussian_df = pd.DataFrame(delta_q_samples_gaussian, columns=config_column_names)
+    
+    param_samples_df = pd.DataFrame(delta_param_samples, columns=param_column_names)
+    param_samples_gaussian_df = pd.DataFrame(delta_q_param_samples_gaussian, columns=param_column_names)
+
+    if plot_distributions:
+        # q_samples_df #
+        plot_kde_histograms(q_samples_df, q_samples_gaussian_df, config_column_names,
+                            subplot_rows=4, subplot_cols=7)
+
+        # param_samples_df #
+        plot_kde_histograms(param_samples_df, param_samples_gaussian_df, param_column_names,
+                            subplot_rows=2, subplot_cols=4)
+    
+    plt.show()
+
+    # Store the covariance matrices for the joint angles and parameters in the tuning directory
+    pickle.dump(cov_q.cov, open(os.path.join(tuning_dir, 'init_cov_q.pkl'), 'wb'))
+    pickle.dump(cov_param.cov, open(os.path.join(tuning_dir, 'init_cov_param.pkl'), 'wb'))
 
 
 def plot_kde_histograms(data, data_ideal, column_names, subplot_rows, subplot_cols,
-                        figsize=(1.92, 1.08), bw_adjust=0.5, bins=30):
+                        figsize=(1.92, 1.08), bins=60, num_kl_samples=1000):
     # Create a subplot grid
     fig, axes = plt.subplots(subplot_rows, subplot_cols, figsize=figsize)
     axes = axes.flatten()
 
-    for i, column in enumerate(column_names):
+    for i, column in enumerate(column_names): 
+        # Define KDE estimators
+        p_kde = gaussian_kde(data[column].dropna())
+        q_kde = gaussian_kde(data_ideal[column].dropna())
+
+        # Define a common support over which to evaluate both KDEs
+        x_values = np.linspace(min(data[column].min(), data_ideal[column].min()), 
+                               max(data[column].max(), data_ideal[column].max()), 
+                               num_kl_samples)
+
+        # Evaluate KDEs
+        p_density = p_kde(x_values)
+        q_density = q_kde(x_values)
+
+        # Avoid division by zero by replancing very small values with a small constant
+        q_density[q_density < 1e-6] = 1e-6
+
+        # Compute KL divergence using numerical integration
+        dx = x_values[1] - x_values[0]
+        kl_div = np.sum(p_density * np.log(p_density / q_density) * dx)
+        print(f'KL divergence for {column}: {kl_div:.4e}')
+
         # Plot histogram of the samples and the KDE
         sns.histplot(data=data, x=column, kde=False, ax=axes[i], bins=bins, stat="density", alpha=0.3)
-        
-        # Plot measured KDE
-        p_kde = sns.kdeplot(data=data, x=column, ax=axes[i], color='blue', linestyle='-')
-        p_pdf = p_kde.get_lines()[0].get_data()[1]
-
-        # Plot ideal KDE
-        q_kde = sns.kdeplot(data=data_ideal, x=column, ax=axes[i], color='red', linestyle='--')
-        q_pdf = q_kde.get_lines()[0].get_data()[1]
-
-        # Normalize the PDFs
-        p_pdf = p_pdf / np.sum(p_pdf)
-        q_pdf = q_pdf / np.sum(q_pdf)
-
-        # Compute KL divergence
-        kl_div = entropy(p_pdf, q_pdf)
+       
+        # Plot the PDFs sampled from the KDEs
+        axes[i].plot(x_values, p_density, color='blue', linestyle='-')
+        axes[i].plot(x_values, q_density, color='red', linestyle='--')
         
         # Set plot title and remove x and y labels
-        axes[i].set_title(column)
+        axes[i].set_title(f'{column}\nKL div.: {kl_div:.4e}')
         axes[i].set_xlabel('')
         axes[i].set_ylabel('')
-                
-        # Display the KL divergence in the top right corner of the plot
-        axes[i].text(0.95, 0.95, f'KL: {kl_div:.2f}',
-                     ha='right', va='top', transform=axes[i].transAxes)
 
     # Hide any unused subplots
     for j in range(i + 1, len(axes)):
@@ -1574,6 +1421,125 @@ def plot_kde_histograms(data, data_ideal, column_names, subplot_rows, subplot_co
     # Add horizontal space between subplots
     fig.subplots_adjust(hspace=1.0)
 
-    # Adjust layout
-    plt.tight_layout()
     plt.draw()
+
+
+def tune_q_acc(X_train_list, time_train_list, train_traj_idx,
+               pred_horizons, imposed_vel, imposed_tasks, predict_k_steps,
+               dim_x, dim_z, p_idx, dt,
+               n_var_per_dof, n_dim_per_kpt, n_kpts,
+               init_P, var_r, var_q_values,
+               mu, M, num_filters_in_bank,
+               custom_inv, max_time_no_meas,
+               prob_imm_col_names,
+               output_col_names,
+               selected_kpt_names, selected_keypoints_for_kinematic_model,
+               tuning_dir,
+               filename,
+               keypoints,
+               dim_name_per_kpt,
+               space_compute='cartesian',
+               space_eval='cartesian',
+               conf_names=[],
+               n_joints=28,
+               n_params=8,
+               param_idx=np.array([]),
+               sindy_model=None,
+               tolerance_percent_in_band=2): # 2% tolerance (from 66% to 70%)
+    
+    selected_var_q = None
+    for i, var_q in enumerate(var_q_values):
+        print(f"\n## TUNING ITER {i} ##\nTuning the initial variance of the process noise (var_q = {var_q})...")
+
+        run_filtering_loop(X_train_list, time_train_list, train_traj_idx,
+                           pred_horizons, predict_k_steps,
+                           dim_x, dim_z, p_idx, dt,
+                           n_var_per_dof, n_dim_per_kpt, n_kpts,
+                           init_P, var_r, var_q,
+                           mu, M, num_filters_in_bank,
+                           custom_inv, max_time_no_meas,
+                           prob_imm_col_names,
+                           output_col_names,
+                           selected_kpt_names, selected_keypoints_for_kinematic_model,
+                           tuning_dir,
+                           filename,
+                           space=space_compute,
+                           n_joints=n_joints,
+                           n_params=n_params,
+                           param_idx=param_idx,
+                           sindy_model=sindy_model) 
+        
+        subjects = []
+        velocities = []
+        tasks = []
+        instructions = {
+            'PICK-&-PLACE': [],
+            'WALKING':      [],
+            'PASSING-BY':   [], 
+        }  
+        for traj_idx in range(len(X_train_list)):
+            traj_info = train_traj_idx[traj_idx]
+            subject_id, velocity, task, instruction = traj_info['subject'], traj_info['velocity'], \
+                                                      traj_info['task'], traj_info['instruction']
+            subjects.append(subject_id)
+
+            if task not in tasks:
+                tasks.append(task)
+            if velocity not in velocities:
+                velocities.append(velocity)
+            if instruction not in instructions[task]:
+                instructions[task].append(instruction)
+
+        # Override the velocities with the imposed velocity
+        if any(velocity != imposed_vel for velocity in velocities):
+            velocities = [imposed_vel]
+            print(f"Imposed velocity: {imposed_vel}")
+
+        # Override the tasks with the imposed tasks
+        if any(task not in imposed_tasks for task in tasks):
+            tasks = imposed_tasks
+            print(f"Imposed tasks: {imposed_tasks}")
+
+        # Load the IDENTIFICATION and VALIDATION results (all pkl files in the output directory)
+        pickle_files = glob.glob(os.path.join(tuning_dir, '*.pkl'))
+
+        # Load the results for the IDENTIFICATION subjects
+        for file in pickle_files:
+            if f'train_filtering_results_{pred_horizons[0]}_steps' in file:
+                with open(file, 'rb') as f:
+                    print(f"\nLoading file: {file}...")
+                    filtering_results = pickle.load(f)
+            elif f'train_prediction_results_{pred_horizons[0]}_steps' in file:
+                with open(file, 'rb') as f:
+                    print(f"Loading file: {file}...")
+                    prediction_results = pickle.load(f)
+
+        # Evaluate the metrics
+        df_results = evaluate_metrics(subjects, velocities, tasks, instructions,
+                                      keypoints, dim_name_per_kpt,
+                                      n_var_per_dof, n_dim_per_kpt, dim_x, pred_horizons[0],
+                                      filtering_results, prediction_results, tuning_dir,
+                                      space_compute=space_compute, space_eval=space_eval,
+                                      conf_names=conf_names, filename_suffix=f'_varQiter_{i}')
+
+        # Delete all .pkl files in tuning_dir
+        files = glob.glob(os.path.join(tuning_dir, '.pkl'))
+        for f in files:
+            os.remove(f)
+
+        # Check if all computed percentages are within the tolerance band
+        # [68% - tolerance_percent_in_band , 68% + tolerance_percent_in_band]
+        # When so, set selected_var_q = var_q
+        # Select the cells with the percentages for CA and IMM for each task
+        percentage_cells = df_results.loc[['CA_perc', 'IMM_perc'], tasks]
+        within_range = (percentage_cells >= 68-tolerance_percent_in_band) & (percentage_cells <= 68+tolerance_percent_in_band)
+        if within_range.all().all():
+            selected_var_q = var_q
+
+    if selected_var_q is not None:
+        print(f"\nSelected var_q: {selected_var_q}")
+    else:
+        raise ValueError("No var_q satisfies the tolerance band.")
+        
+    return selected_var_q
+    
